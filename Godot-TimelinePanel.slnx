@@ -3,5 +3,5 @@
     <Platform Name="x64" />
     <Platform Name="x86" />
   </Configurations>
-  <Project Path="Godot-TimelinePanel.vcxproj" />
+  <Project Path="Godot-TimelinePanel.vcxproj" Id="fa794f35-5717-4f97-b5e5-b8c1452cc635" />
 </Solution>

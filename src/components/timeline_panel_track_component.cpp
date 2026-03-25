@@ -1,0 +1,49 @@
+#include "timeline_panel_track_component.h"
+
+namespace godot {
+	void TimelinePanelTrackComponent::_bind_methods() {
+		ClassDB::bind_method(D_METHOD("set_width", "width"), &TimelinePanelTrackComponent::set_width);
+		ClassDB::bind_method(D_METHOD("get_width"), &TimelinePanelTrackComponent::get_width);
+		ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "width"), "set_width", "get_width");
+
+		ClassDB::bind_method(D_METHOD("set_header_icon", "header_icon"), &TimelinePanelTrackComponent::set_header_icon);
+		ClassDB::bind_method(D_METHOD("get_header_icon"), &TimelinePanelTrackComponent::get_header_icon);
+		ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "header_icon", PROPERTY_HINT_RESOURCE_TYPE, "Texture2D"), "set_header_icon", "get_header_icon");
+
+		ClassDB::bind_method(D_METHOD("set_header_color", "header_color"), &TimelinePanelTrackComponent::set_header_color);
+		ClassDB::bind_method(D_METHOD("get_header_color"), &TimelinePanelTrackComponent::get_header_color);
+		ADD_PROPERTY(PropertyInfo(Variant::COLOR, "header_color"), "set_header_color", "get_header_color");
+	}
+
+	void TimelinePanelTrackComponent::set_width(const float p_width) {
+		width = p_width;
+	}
+
+	float TimelinePanelTrackComponent::get_width() const {
+		return width;
+	}
+
+	void TimelinePanelTrackComponent::set_header_icon(Ref<Texture2D> p_header_icon) {
+		header_icon = p_header_icon;
+	}
+
+	Ref<Texture2D> TimelinePanelTrackComponent::get_header_icon() const {
+		return header_icon;
+	}
+
+	void TimelinePanelTrackComponent::set_header_color(const Color& p_color) {
+		header_color = p_color;
+	}
+
+	Color TimelinePanelTrackComponent::get_header_color() const {
+		return header_color;
+	}
+
+	void TimelinePanelTrackComponent::set_tooltip_text(const String& p_tooltip) {
+		tooltip_text = p_tooltip;
+	}
+
+	String TimelinePanelTrackComponent::get_tooltip_text() const {
+		return tooltip_text;
+	}
+}
