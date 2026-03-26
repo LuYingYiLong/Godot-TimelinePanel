@@ -23,6 +23,11 @@ namespace godot {
 			SEC
 		};
 
+		enum BarNumberDirection {
+			BAR_NUMBER_TOP_DOWN,
+			BAR_NUMBER_BOTTOM_UP
+		};
+
 	private:
 		Color background_color;
 		Color separator_color = Color("#696969");
@@ -34,7 +39,6 @@ namespace godot {
 		float header_height = 16.0f;
 		double duration = 0.0;
 		float scale = 32.0f;
-		double step = 0;
 		CountingUnit counting_unit = TIME;
 
 		Ref<TimelinePanelTimeRulerComponent> time_ruler_component;
@@ -55,15 +59,28 @@ namespace godot {
 		float bar_line_width = 1.0f;
 		Color beat_line_color = Color("#5f8fc9");
 		float beat_line_width = -1.0f;
+		BarNumberDirection bar_number_direction = BAR_NUMBER_TOP_DOWN;
+		
+		void _draw_header(const Point2& pos, const float width, const Color& header_color, Ref<Texture2D> header_icon);
+		void _draw_time_ruler_ticks(float p_header_width);
+		void _draw_grid_beat(float p_header_width);
+		void _draw_grid_frame(float p_header_width);
+		void _draw_grid_time(float p_header_width);
+		float _calculate_header_width() const;
+		float _calculate_grid_height() const;
+		
+		// 时间/拍/帧 与像素位置的转换
+		float _time_to_y(double p_time) const;
+		double _y_to_time(float p_y) const;
+		float _beat_to_y(double p_beat) const;
+		double _y_to_beat(float p_y) const;
+		float _frame_to_y(int64_t p_frame) const;
+		int64_t _y_to_frame(float p_y) const;
 
 	protected:
 		static void _bind_methods();
 		void _notification(int p_what);
 		void _validate_property(PropertyInfo& p_property) const;
-		
-		// 辅助计算方法
-		float _calculate_header_width() const;
-		float _calculate_grid_height() const;
 
 	public:
 		VTimelinePanel();
@@ -87,9 +104,6 @@ namespace godot {
 
 		void set_scale(const float p_scale);
 		float get_scale() const;
-
-		void set_step(const double p_step);
-		double get_step() const;
 
 		void set_counting_unit(CountingUnit p_unit);
 		CountingUnit get_counting_unit() const;
@@ -124,6 +138,9 @@ namespace godot {
 		void set_beat_line_width(const float p_width);
 		float get_beat_line_width() const;
 
+		void set_bar_number_direction(BarNumberDirection p_direction);
+		BarNumberDirection get_bar_number_direction() const;
+
 		void set_time_ruler_component(Ref<TimelinePanelTimeRulerComponent> p_time_ruler_component);
 		Ref<TimelinePanelTimeRulerComponent> get_time_ruler_component() const;
 
@@ -134,6 +151,7 @@ namespace godot {
 
 VARIANT_ENUM_CAST(VTimelinePanel::CountingUnit);
 VARIANT_ENUM_CAST(VTimelinePanel::TimeFormat);
+VARIANT_ENUM_CAST(VTimelinePanel::BarNumberDirection);
 
 #endif // !V_TIMELINE_PANEL_H
 

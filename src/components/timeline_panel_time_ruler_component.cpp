@@ -13,6 +13,30 @@ namespace godot {
 		ClassDB::bind_method(D_METHOD("set_header_color", "header_color"), &TimelinePanelTimeRulerComponent::set_header_color);
 		ClassDB::bind_method(D_METHOD("get_header_color"), &TimelinePanelTimeRulerComponent::get_header_color);
 		ADD_PROPERTY(PropertyInfo(Variant::COLOR, "header_color"), "set_header_color", "get_header_color");
+
+		ClassDB::bind_method(D_METHOD("set_major_tick_height", "major_tick_height"), &TimelinePanelTimeRulerComponent::set_major_tick_height);
+		ClassDB::bind_method(D_METHOD("get_major_tick_height"), &TimelinePanelTimeRulerComponent::get_major_tick_height);
+		ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "major_tick_height"), "set_major_tick_height", "get_major_tick_height");
+
+		ClassDB::bind_method(D_METHOD("set_major_tick_width", "major_tick_width"), &TimelinePanelTimeRulerComponent::set_major_tick_width);
+		ClassDB::bind_method(D_METHOD("get_major_tick_width"), &TimelinePanelTimeRulerComponent::get_major_tick_width);
+		ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "major_tick_width"), "set_major_tick_width", "get_major_tick_width");
+
+		ClassDB::bind_method(D_METHOD("set_minjor_tick_height", "minjor_tick_height"), &TimelinePanelTimeRulerComponent::set_minjor_tick_height);
+		ClassDB::bind_method(D_METHOD("get_minjor_tick_height"), &TimelinePanelTimeRulerComponent::get_minjor_tick_height);
+		ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "minjor_tick_height"), "set_minjor_tick_height", "get_minjor_tick_height");
+
+		ClassDB::bind_method(D_METHOD("set_minjor_tick_width", "minjor_tick_width"), &TimelinePanelTimeRulerComponent::set_minjor_tick_width);
+		ClassDB::bind_method(D_METHOD("get_minjor_tick_width"), &TimelinePanelTimeRulerComponent::get_minjor_tick_width);
+		ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "minjor_tick_width"), "set_minjor_tick_width", "get_minjor_tick_width");
+
+		ClassDB::bind_method(D_METHOD("set_tick_color", "tick_color"), &TimelinePanelTimeRulerComponent::set_tick_color);
+		ClassDB::bind_method(D_METHOD("get_tick_color"), &TimelinePanelTimeRulerComponent::get_tick_color);
+		ADD_PROPERTY(PropertyInfo(Variant::COLOR, "tick_color"), "set_tick_color", "get_tick_color");
+
+		ClassDB::bind_method(D_METHOD("set_show_minor_ticks", "show_minor_ticks"), &TimelinePanelTimeRulerComponent::set_show_minor_ticks);
+		ClassDB::bind_method(D_METHOD("get_show_minor_ticks"), &TimelinePanelTimeRulerComponent::get_show_minor_ticks);
+		ADD_PROPERTY(PropertyInfo(Variant::BOOL, "show_minor_ticks"), "set_show_minor_ticks", "get_show_minor_ticks");
 	}
 
 	void TimelinePanelTimeRulerComponent::set_width(const float p_width) {
@@ -37,5 +61,53 @@ namespace godot {
 
 	Color TimelinePanelTimeRulerComponent::get_header_color() const {
 		return header_color;
+	}
+
+	void TimelinePanelTimeRulerComponent::set_major_tick_height(const float p_height) {
+		major_tick_height = p_height;
+	}
+
+	float TimelinePanelTimeRulerComponent::get_major_tick_height() const {
+		return major_tick_height;
+	}
+
+	void TimelinePanelTimeRulerComponent::set_major_tick_width(const float p_width) {
+		major_tick_width = p_width;
+	}
+
+	float TimelinePanelTimeRulerComponent::get_major_tick_width() const {
+		return major_tick_width;
+	}
+
+	void TimelinePanelTimeRulerComponent::set_minjor_tick_height(const float p_height) {
+		minor_tick_height = p_height;
+	}
+
+	float TimelinePanelTimeRulerComponent::get_minjor_tick_height() const {
+		return minor_tick_height;
+	}
+
+	void TimelinePanelTimeRulerComponent::set_minjor_tick_width(const float p_width) {
+		minor_tick_width = p_width;
+	}
+
+	float TimelinePanelTimeRulerComponent::get_minjor_tick_width() const {
+		return minor_tick_width;
+	}
+
+	void TimelinePanelTimeRulerComponent::set_tick_color(const Color& p_color) {
+		tick_color = p_color;
+	}
+
+	Color TimelinePanelTimeRulerComponent::get_tick_color() const {
+		return tick_color;
+	}
+
+	void TimelinePanelTimeRulerComponent::set_show_minor_ticks(const bool p_show) {
+		show_minor_ticks = p_show;
+	}
+
+	bool TimelinePanelTimeRulerComponent::get_show_minor_ticks() const {
+		return show_minor_ticks;
 	}
 }
