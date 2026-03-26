@@ -243,12 +243,15 @@ namespace godot {
 	void VTimelinePanel::_draw_time_ruler_ticks(float p_header_width) {
 		if (time_ruler_component.is_null()) return;
 
-		float ruler_width = time_ruler_component->get_width();
-		float major_tick_width = time_ruler_component->get_major_tick_width();
-		float minor_tick_width = time_ruler_component->get_minjor_tick_width();
-		Color tick_color = time_ruler_component->get_tick_color();
-		float visible_start_y = header_height;
-		float visible_end_y = get_size().y;
+		const float ruler_width = time_ruler_component->get_width();
+		const float major_tick_height = time_ruler_component->get_major_tick_height();
+		const float major_tick_width = time_ruler_component->get_major_tick_width();
+		const float minor_tick_height = time_ruler_component->get_minjor_tick_height();
+		const float minor_tick_width = time_ruler_component->get_minjor_tick_width();
+		const Color tick_color = time_ruler_component->get_tick_color();
+		const float visible_start_y = header_height;
+		const float visible_end_y = get_size().y;
+		const float margin = 8.0f;
 
 		switch (counting_unit) {
 		case BEAT: {
@@ -265,15 +268,14 @@ namespace godot {
 				if (y < visible_start_y || y > visible_end_y) continue;
 
 				draw_line(
-					Point2(ruler_width - 12.0f, y),
+					Point2(ruler_width - major_tick_height, y),
 					Point2(ruler_width, y),
 					tick_color,
 					major_tick_width
 				);
 
 				// 小节数字，转换函数已经处理了方向，直接显示 bar 即可
-				// 跳过太靠近边缘的小节数字 (避免与 header 重叠或显示0)
-				float margin = 2.0f;
+				// 跳过太靠近边缘的小节数字 (避免与 header 重叠或显示 0)
 				bool should_draw_number = true;
 				if (bar_number_direction == BAR_NUMBER_BOTTOM_UP) {
 					// Bottom Up: 底部是 0，检查是否太靠近底部
@@ -301,7 +303,7 @@ namespace godot {
 					if (y < visible_start_y || y > visible_end_y) continue;
 
 					draw_line(
-						Point2(ruler_width - 6.0f, y),
+						Point2(ruler_width - minor_tick_height, y),
 						Point2(ruler_width, y),
 						tick_color,
 						minor_tick_width
@@ -335,7 +337,7 @@ namespace godot {
 				if (y < visible_start_y || y > visible_end_y) continue;
 
 				bool is_second = (frame % fps) == 0;
-				float tick_width = is_second ? 12.0f : 6.0f;
+				float tick_width = is_second ? major_tick_height : minor_tick_height;
 
 				draw_line(
 					Point2(ruler_width - tick_width, y),
@@ -346,7 +348,7 @@ namespace godot {
 				// 秒数标签
 				if (is_second) {
 					// 跳过太靠近边缘的标签
-					float margin = 2.0f;
+					
 					bool should_draw_label = true;
 					if (bar_number_direction == BAR_NUMBER_BOTTOM_UP) {
 						if (y > get_size().y - margin) should_draw_label = false;
@@ -394,7 +396,7 @@ namespace godot {
 				if (y < visible_start_y || y > visible_end_y) continue;
 
 				bool is_major = Math::fmod(t, 1.0) < 0.001;
-				float tick_width = is_major ? 12.0f : 6.0f;
+				float tick_width = is_major ? major_tick_height: minor_tick_height;
 
 				draw_line(
 					Point2(ruler_width - tick_width, y),
@@ -405,7 +407,6 @@ namespace godot {
 				// 时间标签
 				if (is_major) {
 					// 跳过太靠近边缘的标签
-					float margin = 2.0f;
 					bool should_draw_label = true;
 					if (bar_number_direction == BAR_NUMBER_BOTTOM_UP) {
 						if (y > get_size().y - margin) should_draw_label = false;
@@ -417,15 +418,15 @@ namespace godot {
 						String text;
 						switch (time_format) {
 						case HH_MM_SS:
-							text = String::num_int64((int)t / 3600) + ":" +
-								String::num_int64(((int)t % 3600) / 60).pad_zeros(2) + ":" +
-								String::num_int64((int)t % 60).pad_zeros(2);
+							text = String::num_int64(static_cast<int>(t) / 3600) + ":" +
+								String::num_int64((static_cast<int>(t) % 3600) / 60).pad_zeros(2) + ":" +
+								String::num_int64(static_cast<int>(t) % 60).pad_zeros(2);
 							break;
 						case MM_SS_MS:
-							text = String::num_int64((int)t / 60) + ":" +
-								String::num_int64((int)t % 60).pad_zeros(2);
+							text = String::num_int64(static_cast<int>(t) / 60) + ":" +
+								String::num_int64(static_cast<int>(t) % 60).pad_zeros(2);
 							if (show_milliseconds) {
-								text += "." + String::num_int64((int)((t - (int)t) * 100)).pad_zeros(2);
+								text += "." + String::num_int64(static_cast<int64_t>((t - static_cast<int>(t)) * 100)).pad_zeros(2);
 							}
 							break;
 						case SEC:

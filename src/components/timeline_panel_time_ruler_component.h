@@ -13,9 +13,9 @@ namespace godot {
 		float width = 64.0f;
 		Color header_color = Color("#ff7931");
 		Ref<Texture2D> header_icon;
-		float major_tick_height = 48.0f;
+		float major_tick_height = 20.0f;
 		float major_tick_width = -1.0f;
-		float minor_tick_height = 32.0f;
+		float minor_tick_height = 10.0f;
 		float minor_tick_width = -1.0f;
 		Color tick_color = Color("#696969");
 		bool show_minor_ticks = true;
