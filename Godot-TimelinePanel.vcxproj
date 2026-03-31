@@ -134,6 +134,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="src\components\timeline_panel_base_component.h" />
+    <ClInclude Include="src\components\timeline_panel_playhead_component.h" />
     <ClInclude Include="src\components\timeline_panel_time_ruler_component.h" />
     <ClInclude Include="src\components\timeline_panel_track_component.h" />
     <ClInclude Include="src\register_types.h" />
@@ -141,6 +142,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\components\timeline_panel_base_component.cpp" />
+    <ClCompile Include="src\components\timeline_panel_playhead_component.cpp" />
     <ClCompile Include="src\components\timeline_panel_time_ruler_component.cpp" />
     <ClCompile Include="src\components\timeline_panel_track_component.cpp" />
     <ClCompile Include="src\register_types.cpp" />
