@@ -2,6 +2,7 @@
 
 #include "v_timeline_panel.h"
 #include "components/timeline_panel_base_component.h"
+#include "components/timeline_panel_playhead_component.h"
 #include "components/timeline_panel_time_ruler_component.h"
 #include "components/timeline_panel_track_component.h"
 
@@ -21,6 +22,7 @@ void initialize_timeline_panel_module(ModuleInitializationLevel p_level) {
 	}
 
 	GDREGISTER_VIRTUAL_CLASS(TimelinePanelBaseComponent);
+	GDREGISTER_CLASS(TimelinePanelPlayheadComponent);
 	GDREGISTER_CLASS(TimelinePanelTimeRulerComponent);
 	GDREGISTER_CLASS(TimelinePanelTrackComponent);
 

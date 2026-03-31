@@ -1,5 +1,6 @@
 #include "v_timeline_panel.h"
 
+#include "components/timeline_panel_playhead_component.h"
 #include "components/timeline_panel_time_ruler_component.h"
 #include "components/timeline_panel_track_component.h"
 
@@ -19,6 +20,13 @@ namespace godot {
 		BIND_ENUM_CONSTANT(BAR_NUMBER_TOP_DOWN);
 		BIND_ENUM_CONSTANT(BAR_NUMBER_BOTTOM_UP);
 
+		ClassDB::bind_method(D_METHOD("get_time_from_position", "position"), &VTimelinePanel::get_time_from_position);
+		ClassDB::bind_method(D_METHOD("get_frame_from_position", "position"), &VTimelinePanel::get_frame_from_position);
+		ClassDB::bind_method(D_METHOD("get_beat_from_position", "position"), &VTimelinePanel::get_beat_from_position);
+		ClassDB::bind_method(D_METHOD("get_position_from_time", "time"), &VTimelinePanel::get_position_from_time);
+		ClassDB::bind_method(D_METHOD("get_position_from_frame", "frame"), &VTimelinePanel::get_position_from_frame);
+		ClassDB::bind_method(D_METHOD("get_position_from_beat", "beat"), &VTimelinePanel::get_position_from_beat);
+
 		ClassDB::bind_method(D_METHOD("set_background_color", "background_color"), &VTimelinePanel::set_background_color);
 		ClassDB::bind_method(D_METHOD("get_background_color"), &VTimelinePanel::get_background_color);
 		ADD_PROPERTY(PropertyInfo(Variant::COLOR, "background_color"), "set_background_color", "get_background_color");
@@ -30,6 +38,10 @@ namespace godot {
 		ClassDB::bind_method(D_METHOD("set_duration", "duration"), &VTimelinePanel::set_duration);
 		ClassDB::bind_method(D_METHOD("get_duration"), &VTimelinePanel::get_duration);
 		ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "duration", PROPERTY_HINT_RANGE, "0,99999,0.01,or_greater,suffix:s"), "set_duration", "get_duration");
+
+		ClassDB::bind_method(D_METHOD("set_current_time", "current_time"), &VTimelinePanel::set_current_time);
+		ClassDB::bind_method(D_METHOD("get_current_time"), &VTimelinePanel::get_current_time);
+		ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "current_time", PROPERTY_HINT_RANGE, "0,99999,0.01,or_greater,suffix:s"), "set_current_time", "get_current_time");
 
 		ClassDB::bind_method(D_METHOD("set_scale", "scale"), &VTimelinePanel::set_scale);
 		ClassDB::bind_method(D_METHOD("get_scale"), &VTimelinePanel::get_scale);
@@ -98,6 +110,11 @@ namespace godot {
 		ADD_GROUP("", "");
 
 		ADD_GROUP("Components", "component_");
+		ClassDB::bind_method(D_METHOD("set_playhead_component", "playhead_component"), &VTimelinePanel::set_playhead_component);
+		ClassDB::bind_method(D_METHOD("get_playhead_component"), &VTimelinePanel::get_playhead_component);
+		ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "component_playhead", PROPERTY_HINT_RESOURCE_TYPE, "TimelinePanelPlayheadComponent"), "set_playhead_component", "get_playhead_component");
+
+		ADD_GROUP("Components", "component_");
 		ClassDB::bind_method(D_METHOD("set_time_ruler_component", "time_ruler_component"), &VTimelinePanel::set_time_ruler_component);
 		ClassDB::bind_method(D_METHOD("get_time_ruler_component"), &VTimelinePanel::get_time_ruler_component);
 		ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "component_time_ruler", PROPERTY_HINT_RESOURCE_TYPE, "TimelinePanelTimeRulerComponent"), "set_time_ruler_component", "get_time_ruler_component");
@@ -157,6 +174,40 @@ namespace godot {
 
 			// 绘制时间尺刻度
 			_draw_time_ruler_ticks(header_width);
+
+			// 绘制播放头
+			if (playhead_component.is_valid()) {
+				float current_width = 0.0f;
+				if (time_ruler_component.is_valid()) {
+					current_width += time_ruler_component->get_width();
+				}
+
+				// 根据计数单位计算当前位置
+				double current_position;
+				switch (counting_unit) {
+				case FRAME:
+					current_position = get_position_from_frame(static_cast<int64_t>(current_time));
+					break;
+				case BEAT:
+					current_position = get_position_from_beat(current_time);
+					break;
+				case TIME:
+				default:
+					current_position = get_position_from_time(current_time);
+					break;
+				}
+				const PackedVector2Array points = playhead_component->_get_points(current_position, current_width);
+				const PackedColorArray colors = playhead_component->_get_colors(current_position);
+				const String text = playhead_component->_get_text(static_cast<int>(counting_unit), current_time, current_position);
+				const Ref<Font> font = playhead_component->_get_font(current_position);
+				const Vector2 font_pos = playhead_component->_get_font_pos(current_position);
+				const int64_t font_size = playhead_component->_get_font_size(current_position);
+				const Color font_color = playhead_component->_get_font_color(current_position);
+				const bool show_line = playhead_component->_can_show_line(current_position);
+				const float line_width = playhead_component->_get_line_width(current_position);
+				const Color line_color = playhead_component->_get_line_color(current_position);
+				_draw_playhead(points, colors, text, font, font_pos, font_size, font_color, show_line, line_width, line_color);
+			}
 		} break;
 		}
 	}
@@ -240,6 +291,11 @@ namespace godot {
 		return static_cast<int64_t>(time * fps);
 	}
 
+	void VTimelinePanel::_on_resource_changed() {
+		queue_redraw();
+		update_minimum_size();
+	}
+
 	void VTimelinePanel::_draw_time_ruler_ticks(float p_header_width) {
 		if (time_ruler_component.is_null()) return;
 
@@ -252,6 +308,7 @@ namespace godot {
 		const float visible_start_y = header_height;
 		const float visible_end_y = get_size().y;
 		const float margin = 8.0f;
+		const Ref<Font> font = ThemeDB::get_singleton()->get_fallback_font();
 
 		switch (counting_unit) {
 		case BEAT: {
@@ -287,8 +344,7 @@ namespace godot {
 				
 				if (should_draw_number) {
 					// 使用默认字体绘制文字
-					String text = String::num_int64(bar);
-					Ref<Font> font = ThemeDB::get_singleton()->get_fallback_font();
+					String text = String::num_int64(bar);	
 					if (font.is_valid()) {
 						draw_string(font, Point2(2.0f, y + 6.0f), text, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, tick_color);
 					}
@@ -347,8 +403,6 @@ namespace godot {
 
 				// 秒数标签
 				if (is_second) {
-					// 跳过太靠近边缘的标签
-					
 					bool should_draw_label = true;
 					if (bar_number_direction == BAR_NUMBER_BOTTOM_UP) {
 						if (y > get_size().y - margin) should_draw_label = false;
@@ -358,7 +412,6 @@ namespace godot {
 					
 					if (should_draw_label) {
 						String text = String::num_int64(frame / fps);
-						Ref<Font> font = ThemeDB::get_singleton()->get_fallback_font();
 						if (font.is_valid()) {
 							draw_string(font, Point2(2.0f, y + 6.0f), text + "s", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(1, 1, 1));
 						}
@@ -406,7 +459,6 @@ namespace godot {
 
 				// 时间标签
 				if (is_major) {
-					// 跳过太靠近边缘的标签
 					bool should_draw_label = true;
 					if (bar_number_direction == BAR_NUMBER_BOTTOM_UP) {
 						if (y > get_size().y - margin) should_draw_label = false;
@@ -434,7 +486,6 @@ namespace godot {
 							text = String::num(t, (show_milliseconds ? 2 : 0)) + "s";
 							break;
 						}
-						Ref<Font> font = ThemeDB::get_singleton()->get_fallback_font();
 						if (font.is_valid()) {
 							draw_string(font, Point2(2.0f, y + 6.0f), text, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(1, 1, 1));
 						}
@@ -444,6 +495,38 @@ namespace godot {
 			break;
 		}
 		}
+	}
+
+	void VTimelinePanel::_draw_playhead(
+		const PackedVector2Array& points,
+		const PackedColorArray& colors,
+		const String& text,
+		const Ref<Font> font,
+		const Vector2& font_pos,
+		const int64_t font_size,
+		const Color& font_color,
+		const bool show_line,
+		const float line_width,
+		const Color& line_color
+	) {
+		draw_polygon(points, colors);
+		if (show_line) {
+			double line_position;
+			switch (counting_unit) {
+			case FRAME:
+				line_position = get_position_from_frame(static_cast<int64_t>(current_time));
+				break;
+			case BEAT:
+				line_position = get_position_from_beat(current_time);
+				break;
+			case TIME:
+			default:
+				line_position = get_position_from_time(current_time);
+				break;
+			}
+			draw_line(Point2(0.0f, line_position), Point2(header_width, line_position), line_color, line_width);
+		}
+		draw_string(font, font_pos, text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, font_color);
 	}
 
 	void VTimelinePanel::_draw_grid_beat(float p_header_width) {
@@ -625,6 +708,30 @@ namespace godot {
 		return Size2(min_width, min_height);
 	}
 
+	double VTimelinePanel::get_time_from_position(const double p_position) const {
+		return _y_to_time(static_cast<float>(p_position));
+	}
+
+	double VTimelinePanel::get_frame_from_position(const double p_position) const {
+		return static_cast<double>(_y_to_frame(static_cast<float>(p_position)));
+	}
+
+	double VTimelinePanel::get_beat_from_position(const double p_position) const {
+		return _y_to_beat(static_cast<float>(p_position));
+	}
+
+	double VTimelinePanel::get_position_from_time(double p_time) const {
+		return static_cast<double>(_time_to_y(p_time));
+	}
+
+	double VTimelinePanel::get_position_from_frame(int64_t p_frame) const {
+		return static_cast<double>(_frame_to_y(p_frame));
+	}
+
+	double VTimelinePanel::get_position_from_beat(double p_beat) const {
+		return static_cast<double>(_beat_to_y(p_beat));
+	}
+
 	void VTimelinePanel::set_background_color(const Color& p_background_color) {
 		background_color = p_background_color;
 		queue_redraw();
@@ -670,6 +777,15 @@ namespace godot {
 
 	double VTimelinePanel::get_duration() const {
 		return duration;
+	}
+
+	void VTimelinePanel::set_current_time(const double p_current_time) {
+		current_time = p_current_time;
+		queue_redraw();
+	}
+
+	double VTimelinePanel::get_current_time() const {
+		return current_time;
 	}
 
 	void VTimelinePanel::set_scale(const float p_scale) {
@@ -795,8 +911,23 @@ namespace godot {
 		return bar_number_direction;
 	}
 
+	void VTimelinePanel::set_playhead_component(Ref<TimelinePanelPlayheadComponent> p_playhead_component) {
+		playhead_component = p_playhead_component;
+		if (playhead_component.is_valid()) {
+			playhead_component->connect("changed", callable_mp(this, &VTimelinePanel::_on_resource_changed));
+		}
+		queue_redraw();
+	}
+
+	Ref<TimelinePanelPlayheadComponent> VTimelinePanel::get_playhead_component() const {
+		return playhead_component;
+	}
+
 	void VTimelinePanel::set_time_ruler_component(Ref<TimelinePanelTimeRulerComponent> p_time_ruler_component) {
 		time_ruler_component = p_time_ruler_component;
+		if (time_ruler_component.is_valid()) {
+			time_ruler_component->connect("changed", callable_mp(this, &VTimelinePanel::_on_resource_changed));
+		}
 		queue_redraw();
 		update_minimum_size();
 	}
@@ -807,6 +938,12 @@ namespace godot {
 
 	void VTimelinePanel::set_track_components(const TypedArray<TimelinePanelTrackComponent>& p_track_components) {
 		track_components = p_track_components;
+		for (int i = 0; i < track_components.size(); i++) {
+			Ref<TimelinePanelTrackComponent> track_component = track_components[i];
+			if (track_component.is_valid()) {
+				track_component->connect("changed", callable_mp(this, &VTimelinePanel::_on_resource_changed));
+			}
+		}
 		queue_redraw();
 		update_minimum_size();
 	}

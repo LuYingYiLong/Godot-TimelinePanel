@@ -20,6 +20,10 @@ namespace godot {
 		Color tick_color = Color("#696969");
 		bool show_minor_ticks = true;
 
+		Color playhead_color = Color("#ffffff");
+		Color playhead_text_color = Color("#000000");
+		float playhead_line_width = 2.0f;
+
 	protected:
 		static void _bind_methods();
 
@@ -50,6 +54,15 @@ namespace godot {
 
 		void set_show_minor_ticks(const bool p_show);
 		bool get_show_minor_ticks() const;
+
+		void set_playhead_color(const Color& p_color);
+		Color get_playhead_color() const;
+
+		void set_playhead_text_color(const Color& p_color);
+		Color get_playhead_text_color() const;
+
+		void set_playhead_line_width(const float p_width);
+		float get_playhead_line_width() const;
 	};
 }
 

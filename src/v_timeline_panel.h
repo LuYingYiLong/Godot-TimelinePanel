@@ -4,6 +4,7 @@
 #include <godot_cpp/classes/control.hpp>
 
 namespace godot {
+	class TimelinePanelPlayheadComponent;
 	class TimelinePanelTimeRulerComponent;
 	class TimelinePanelTrackComponent;
 
@@ -38,9 +39,11 @@ namespace godot {
 		float header_width = 0.0f;
 		float header_height = 16.0f;
 		double duration = 0.0;
+		double current_time = 0.0;
 		float scale = 32.0f;
 		CountingUnit counting_unit = TIME;
 
+		Ref<TimelinePanelPlayheadComponent> playhead_component;
 		Ref<TimelinePanelTimeRulerComponent> time_ruler_component;
 		TypedArray<TimelinePanelTrackComponent> track_components;
 
@@ -63,6 +66,18 @@ namespace godot {
 		
 		void _draw_header(const Point2& pos, const float width, const Color& header_color, Ref<Texture2D> header_icon);
 		void _draw_time_ruler_ticks(float p_header_width);
+		void _draw_playhead(
+			const PackedVector2Array& points,
+			const PackedColorArray& colors,
+			const String& text,
+			const Ref<Font> font,
+			const Vector2& font_pos,
+			const int64_t font_size,
+			const Color& font_color,
+			const bool show_line,
+			const float line_width,
+			const Color& line_color
+		);
 		void _draw_grid_beat(float p_header_width);
 		void _draw_grid_frame(float p_header_width);
 		void _draw_grid_time(float p_header_width);
@@ -77,6 +92,8 @@ namespace godot {
 		float _frame_to_y(int64_t p_frame) const;
 		int64_t _y_to_frame(float p_y) const;
 
+		void _on_resource_changed();
+
 	protected:
 		static void _bind_methods();
 		void _notification(int p_what);
@@ -86,6 +103,13 @@ namespace godot {
 		VTimelinePanel();
 
 		virtual Vector2 _get_minimum_size() const override;
+
+		double get_time_from_position(const double p_position) const;
+		double get_frame_from_position(const double p_position) const;
+		double get_beat_from_position(const double p_position) const;
+		double get_position_from_time(double p_time) const;
+		double get_position_from_frame(int64_t p_frame) const;
+		double get_position_from_beat(double p_beat) const;
 
 		void set_background_color(const Color& p_background_color);
 		Color get_background_color() const;
@@ -101,6 +125,9 @@ namespace godot {
 
 		void set_duration(const double p_duration);
 		double get_duration() const;
+
+		void set_current_time(const double p_current_time);
+		double get_current_time() const;
 
 		void set_scale(const float p_scale);
 		float get_scale() const;
@@ -140,6 +167,9 @@ namespace godot {
 
 		void set_bar_number_direction(BarNumberDirection p_direction);
 		BarNumberDirection get_bar_number_direction() const;
+
+		void set_playhead_component(Ref<TimelinePanelPlayheadComponent> p_playhead_component);
+		Ref<TimelinePanelPlayheadComponent> get_playhead_component() const;
 
 		void set_time_ruler_component(Ref<TimelinePanelTimeRulerComponent> p_time_ruler_component);
 		Ref<TimelinePanelTimeRulerComponent> get_time_ruler_component() const;

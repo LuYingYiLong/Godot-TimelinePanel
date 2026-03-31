@@ -17,6 +17,7 @@ namespace godot {
 
 	void TimelinePanelTrackComponent::set_width(const float p_width) {
 		width = p_width;
+		emit_changed();
 	}
 
 	float TimelinePanelTrackComponent::get_width() const {
@@ -25,6 +26,7 @@ namespace godot {
 
 	void TimelinePanelTrackComponent::set_header_icon(Ref<Texture2D> p_header_icon) {
 		header_icon = p_header_icon;
+		emit_changed();
 	}
 
 	Ref<Texture2D> TimelinePanelTrackComponent::get_header_icon() const {
@@ -33,6 +35,7 @@ namespace godot {
 
 	void TimelinePanelTrackComponent::set_header_color(const Color& p_color) {
 		header_color = p_color;
+		emit_changed();
 	}
 
 	Color TimelinePanelTrackComponent::get_header_color() const {
@@ -41,6 +44,7 @@ namespace godot {
 
 	void TimelinePanelTrackComponent::set_tooltip_text(const String& p_tooltip) {
 		tooltip_text = p_tooltip;
+		emit_changed();
 	}
 
 	String TimelinePanelTrackComponent::get_tooltip_text() const {
