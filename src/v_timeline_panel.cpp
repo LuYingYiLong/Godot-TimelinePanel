@@ -6,6 +6,7 @@
 
 #include <godot_cpp/classes/font.hpp>
 #include <godot_cpp/classes/theme_db.hpp>
+#include <godot_cpp/variant/utility_functions.hpp>
 
 namespace godot {
 	void VTimelinePanel::_bind_methods() {
@@ -126,39 +127,21 @@ namespace godot {
 
 	void VTimelinePanel::_notification(int p_what) {
 		switch (p_what) {
+		case NOTIFICATION_RESIZED: {
+			_update_scroll_bar();
+		} break;
+
 		case NOTIFICATION_DRAW: {
 			draw_rect(Rect2(Vector2(0, 0), get_size()), background_color);
-			Vector2 start_pos;
 
-			// 处理时间尺组件
-			if (time_ruler_component.is_valid()) {
-				float width = time_ruler_component->get_width();
-				Color header_color = time_ruler_component->get_header_color();
-				Ref<Texture2D> header_icon = time_ruler_component->get_header_icon();
-				_draw_header(start_pos, width, header_color, header_icon);
+			// 先计算 header_width
+			header_width = _calculate_header_width();
 
-				start_pos.x += width;
-			}
-			draw_line(Point2(start_pos.x, header_height), Point2(start_pos.x, get_size().y), separator_color, separator_width);
+			// 计算内容高度并更新滚动条
+			content_height = _calculate_grid_height();
+			_update_scroll_bar();
 
-			// 处理轨道组件
-			for (int64_t i = 0; i < track_components.size(); i++) {
-				Ref<TimelinePanelTrackComponent> track_component = track_components[i];
-				if (track_component.is_null()) continue;
-
-				float width = track_component->get_width();
-				Color header_color = track_component->get_header_color();
-				Ref<Texture2D> header_icon = track_component->get_header_icon();
-				_draw_header(start_pos, width, header_color, header_icon);
-				draw_line(Point2(start_pos.x + width, header_height), Point2(start_pos.x + width, get_size().y), separator_color, separator_width);
-
-				start_pos.x += width;
-			}
-
-			// 更新 header_width 供后续使用
-			header_width = start_pos.x;
-
-			// 绘制网格和时间尺刻度
+			// 绘制网格
 			switch (counting_unit) {
 			case BEAT:
 				_draw_grid_beat(header_width);
@@ -182,15 +165,19 @@ namespace godot {
 					current_width += time_ruler_component->get_width();
 				}
 
-				// 根据计数单位计算当前位置
 				double current_position;
 				switch (counting_unit) {
-				case FRAME:
-					current_position = get_position_from_frame(static_cast<int64_t>(current_time));
+				case FRAME: {
+					int64_t frame = static_cast<int64_t>(current_time * fps);
+					current_position = get_position_from_frame(frame);
 					break;
-				case BEAT:
-					current_position = get_position_from_beat(current_time);
+				}
+				case BEAT: {
+					double beat_duration = 60.0 / bpm;
+					double beat = current_time / beat_duration;
+					current_position = get_position_from_beat(beat);
 					break;
+				}
 				case TIME:
 				default:
 					current_position = get_position_from_time(current_time);
@@ -207,6 +194,32 @@ namespace godot {
 				const float line_width = playhead_component->_get_line_width(current_position);
 				const Color line_color = playhead_component->_get_line_color(current_position);
 				_draw_playhead(points, colors, text, font, font_pos, font_size, font_color, show_line, line_width, line_color);
+			}
+
+			// 最后绘制 header
+			Vector2 start_pos;
+
+			if (time_ruler_component.is_valid()) {
+				float width = time_ruler_component->get_width();
+				Color header_color = time_ruler_component->get_header_color();
+				Ref<Texture2D> header_icon = time_ruler_component->get_header_icon();
+				_draw_header(start_pos, width, header_color, header_icon);
+
+				start_pos.x += width;
+			}
+			draw_line(Point2(start_pos.x, header_height), Point2(start_pos.x, get_size().y), separator_color, separator_width);
+
+			for (int64_t i = 0; i < track_components.size(); i++) {
+				Ref<TimelinePanelTrackComponent> track_component = track_components[i];
+				if (track_component.is_null()) continue;
+
+				float width = track_component->get_width();
+				Color header_color = track_component->get_header_color();
+				Ref<Texture2D> header_icon = track_component->get_header_icon();
+				_draw_header(start_pos, width, header_color, header_icon);
+				draw_line(Point2(start_pos.x + width, header_height), Point2(start_pos.x + width, get_size().y), separator_color, separator_width);
+
+				start_pos.x += width;
 			}
 		} break;
 		}
@@ -237,7 +250,14 @@ namespace godot {
 	}
 
 	VTimelinePanel::VTimelinePanel() {
+		set_clip_contents(true);
 
+		vscroll = memnew(VScrollBar);
+		vscroll->set_step(0.001);
+		vscroll->set_anchor_and_offset(SIDE_BOTTOM, ANCHOR_END, 0);
+		vscroll->set_anchor_and_offset(SIDE_RIGHT, ANCHOR_END, 0);
+		vscroll->connect("value_changed", callable_mp(this, &VTimelinePanel::_scroll_changed));
+		add_child(vscroll, false, INTERNAL_MODE_FRONT);
 	}
 
 	void VTimelinePanel::_draw_header(const Point2& pos, const float width, const Color& header_color, Ref<Texture2D> header_icon) {
@@ -257,43 +277,80 @@ namespace godot {
 
 	float VTimelinePanel::_time_to_y(double p_time) const {
 		if (bar_number_direction == BAR_NUMBER_BOTTOM_UP) {
-			return get_size().y - p_time * scale;
+			return header_height + content_height - p_time * scale - scroll_value;
 		}
-		return header_height + p_time * scale;
+		return header_height + p_time * scale - scroll_value;
 	}
 
 	double VTimelinePanel::_y_to_time(float p_y) const {
 		if (bar_number_direction == BAR_NUMBER_BOTTOM_UP) {
-			return (get_size().y - p_y) / scale;
+			return (header_height + content_height - p_y - scroll_value) / scale;
 		}
-		return (p_y - header_height) / scale;
+		return (p_y - header_height + scroll_value) / scale;
 	}
 
 	float VTimelinePanel::_beat_to_y(double p_beat) const {
-		double beat_duration = 60.0 / bpm;
-		double time = p_beat * beat_duration;
-		return _time_to_y(time);
+		double bar = p_beat / beats_per_bar;
+		if (bar_number_direction == BAR_NUMBER_BOTTOM_UP) {
+			return header_height + content_height - bar * scale - scroll_value;
+		}
+		return header_height + bar * scale - scroll_value;
 	}
 
 	double VTimelinePanel::_y_to_beat(float p_y) const {
-		double time = _y_to_time(p_y);
-		double beat_duration = 60.0 / bpm;
-		return time / beat_duration;
+		if (bar_number_direction == BAR_NUMBER_BOTTOM_UP) {
+			double bar = (header_height + content_height - p_y - scroll_value) / scale;
+			return bar * beats_per_bar;
+		}
+		double bar = (p_y - header_height + scroll_value) / scale;
+		return bar * beats_per_bar;
 	}
 
 	float VTimelinePanel::_frame_to_y(int64_t p_frame) const {
-		double time = (double)p_frame / fps;
-		return _time_to_y(time);
+		if (bar_number_direction == BAR_NUMBER_BOTTOM_UP) {
+			return header_height + content_height - p_frame * scale - scroll_value;
+		}
+		return header_height + p_frame * scale - scroll_value;
 	}
 
 	int64_t VTimelinePanel::_y_to_frame(float p_y) const {
-		double time = _y_to_time(p_y);
-		return static_cast<int64_t>(time * fps);
+		if (bar_number_direction == BAR_NUMBER_BOTTOM_UP) {
+			return static_cast<int64_t>((header_height + content_height - p_y - scroll_value) / scale);
+		}
+		return static_cast<int64_t>((p_y - header_height + scroll_value) / scale);
 	}
 
 	void VTimelinePanel::_on_resource_changed() {
 		queue_redraw();
 		update_minimum_size();
+	}
+
+	void VTimelinePanel::_update_scroll_bar() {
+		if (vscroll == nullptr) return;
+
+		float visible_height = get_size().y - header_height;
+		bool show_scroll = content_height > visible_height;
+
+		if (show_scroll) {
+			float scroll_width = vscroll->get_combined_minimum_size().x;
+			vscroll->set_anchor_and_offset(SIDE_LEFT, ANCHOR_END, -scroll_width);
+			vscroll->set_anchor_and_offset(SIDE_TOP, ANCHOR_BEGIN, header_height);
+
+			updating_scroll = true;
+			vscroll->set_max(content_height);
+			vscroll->set_page(visible_height);
+			vscroll->set_visible(true);
+			updating_scroll = false;
+		} else {
+			vscroll->set_visible(false);
+			scroll_value = 0.0f;
+		}
+	}
+
+	void VTimelinePanel::_scroll_changed(double p_value) {
+		if (updating_scroll) return;
+		scroll_value = p_value;
+		queue_redraw();
 	}
 
 	void VTimelinePanel::_draw_time_ruler_ticks(float p_header_width) {
@@ -513,12 +570,17 @@ namespace godot {
 		if (show_line) {
 			double line_position;
 			switch (counting_unit) {
-			case FRAME:
-				line_position = get_position_from_frame(static_cast<int64_t>(current_time));
+			case FRAME: {
+				int64_t frame = static_cast<int64_t>(current_time * fps);
+				line_position = get_position_from_frame(frame);
 				break;
-			case BEAT:
-				line_position = get_position_from_beat(current_time);
+			}
+			case BEAT: {
+				double beat_duration = 60.0 / bpm;
+				double beat = current_time / beat_duration;
+				line_position = get_position_from_beat(beat);
 				break;
+			}
 			case TIME:
 			default:
 				line_position = get_position_from_time(current_time);
@@ -541,7 +603,6 @@ namespace godot {
 		// 计算可见范围内的小节和拍
 		double start_beat = _y_to_beat(visible_start_y);
 		double end_beat = _y_to_beat(visible_end_y);
-		// 确保 start_bar <= end_bar (考虑 Bottom Up 模式）
 		int start_bar = Math::floor(Math::min(start_beat, end_beat) / beats_per_bar);
 		int end_bar = Math::ceil(Math::max(start_beat, end_beat) / beats_per_bar);
 
@@ -680,21 +741,18 @@ namespace godot {
 		switch (counting_unit) {
 		case BEAT: {
 			float beat_duration = 60.0f / bpm;
-			float bar_duration = beat_duration * beats_per_bar;
-			int total_beats = Math::ceil(duration / beat_duration);
-			int total_bars = Math::ceil((float)total_beats / beats_per_bar);
+			double total_beats = duration / beat_duration;
+			double total_bars = total_beats / beats_per_bar;
 			if (total_bars < 1) total_bars = 1;
 			return total_bars * scale;
 		}
 		case FRAME: {
-			// 每帧高度 = scale / fps
-			int total_frames = Math::ceil(duration * fps);
+			double total_frames = duration * fps;
 			if (total_frames < 1) total_frames = 1;
-			return total_frames * (scale / fps);
+			return total_frames * scale;
 		}
 		case TIME:
 		default: {
-			// 每秒高度 = scale
 			float time_height = duration * scale;
 			if (time_height < scale) time_height = scale;
 			return time_height;
@@ -704,7 +762,7 @@ namespace godot {
 
 	Vector2 VTimelinePanel::_get_minimum_size() const {
 		float min_width = _calculate_header_width();
-		float min_height = header_height + _calculate_grid_height();
+		float min_height = header_height;
 		return Size2(min_width, min_height);
 	}
 
@@ -940,7 +998,7 @@ namespace godot {
 		track_components = p_track_components;
 		for (int i = 0; i < track_components.size(); i++) {
 			Ref<TimelinePanelTrackComponent> track_component = track_components[i];
-			if (track_component.is_valid()) {
+			if (track_component.is_valid() && !track_component->is_connected("changed", callable_mp(this, &VTimelinePanel::_on_resource_changed))) {
 				track_component->connect("changed", callable_mp(this, &VTimelinePanel::_on_resource_changed));
 			}
 		}

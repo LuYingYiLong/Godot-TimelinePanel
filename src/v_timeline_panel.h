@@ -2,6 +2,7 @@
 #define V_TIMELINE_PANEL_H
 
 #include <godot_cpp/classes/control.hpp>
+#include <godot_cpp/classes/v_scroll_bar.hpp>
 
 namespace godot {
 	class TimelinePanelPlayheadComponent;
@@ -46,6 +47,14 @@ namespace godot {
 		Ref<TimelinePanelPlayheadComponent> playhead_component;
 		Ref<TimelinePanelTimeRulerComponent> time_ruler_component;
 		TypedArray<TimelinePanelTrackComponent> track_components;
+
+		VScrollBar* vscroll = nullptr;
+		float scroll_value = 0.0f;
+		float content_height = 0.0f;
+		bool updating_scroll = false;
+
+		void _update_scroll_bar();
+		void _scroll_changed(double p_value);
 
 		// 使用时间作为计数单位
 		TimeFormat time_format = MM_SS_MS;
