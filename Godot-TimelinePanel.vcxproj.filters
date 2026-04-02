@@ -32,6 +32,9 @@
     <ClInclude Include="src\components\timeline_panel_time_ruler_component.h">
       <Filter>Header Files\components</Filter>
     </ClInclude>
+    <ClInclude Include="src\components\timeline_panel_playhead_component.h">
+      <Filter>Header Files\components</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\register_types.cpp">
@@ -47,6 +50,9 @@
       <Filter>Source Files\components</Filter>
     </ClCompile>
     <ClCompile Include="src\components\timeline_panel_time_ruler_component.cpp">
+      <Filter>Source Files\components</Filter>
+    </ClCompile>
+    <ClCompile Include="src\components\timeline_panel_playhead_component.cpp">
       <Filter>Source Files\components</Filter>
     </ClCompile>
   </ItemGroup>

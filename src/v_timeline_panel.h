@@ -2,6 +2,8 @@
 #define V_TIMELINE_PANEL_H
 
 #include <godot_cpp/classes/control.hpp>
+#include <godot_cpp/classes/input_event.hpp>
+#include <godot_cpp/classes/h_scroll_bar.hpp>
 #include <godot_cpp/classes/v_scroll_bar.hpp>
 
 namespace godot {
@@ -30,6 +32,21 @@ namespace godot {
 			BAR_NUMBER_BOTTOM_UP
 		};
 
+		enum ScrollMode {
+			SCROLL_MODE_DISABLED = 0,
+			SCROLL_MODE_AUTO,
+			SCROLL_MODE_SHOW_ALWAYS,
+			SCROLL_MODE_SHOW_NEVER,
+			SCROLL_MODE_RESERVE,
+		};
+
+		enum ScrollHintMode {
+			SCROLL_HINT_MODE_DISABLED,
+			SCROLL_HINT_MODE_ALL,
+			SCROLL_HINT_MODE_TOP_AND_LEFT,
+			SCROLL_HINT_MODE_BOTTOM_AND_RIGHT,
+		};
+
 	private:
 		Color background_color;
 		Color separator_color = Color("#696969");
@@ -48,23 +65,21 @@ namespace godot {
 		Ref<TimelinePanelTimeRulerComponent> time_ruler_component;
 		TypedArray<TimelinePanelTrackComponent> track_components;
 
-		VScrollBar* vscroll = nullptr;
-		float scroll_value = 0.0f;
+		float hscroll_value = 0.0f;
+		float vscroll_value = 0.0f;
 		float content_height = 0.0f;
 		bool updating_scroll = false;
 
 		void _update_scroll_bar();
-		void _scroll_changed(double p_value);
+		void _h_scroll_changed(double p_value);
+		void _v_scroll_changed(double p_value);
 
-		// 使用时间作为计数单位
 		TimeFormat time_format = MM_SS_MS;
 		bool show_milliseconds = false;
 
-		// 使用帧作为计数单位
 		int fps = 24;
 		bool show_subdivision = true;
 
-		// 使用节拍作为计数单位
 		int bpm = 120;
 		int beats_per_bar = 4;
 		Color bar_line_color = Color("#ff7384");
@@ -73,6 +88,27 @@ namespace godot {
 		float beat_line_width = -1.0f;
 		BarNumberDirection bar_number_direction = BAR_NUMBER_TOP_DOWN;
 		
+		HScrollBar* hscroll = nullptr;
+		VScrollBar* vscroll = nullptr;
+		float content_width = 0.0f;
+		ScrollMode horizontal_scroll_mode = SCROLL_MODE_AUTO;
+		ScrollMode vertical_scroll_mode = SCROLL_MODE_AUTO;
+		int deadzone = 0;
+
+		Vector2 drag_speed;
+		Vector2 drag_accum;
+		Vector2 drag_from;
+		Vector2 last_drag_accum;
+		float time_since_motion = 0.0f;
+		bool drag_touching = false;
+		bool drag_touching_deaccel = false;
+		bool beyond_deadzone = false;
+		bool scroll_on_drag_hover = false;
+
+		void _scroll(ScrollBar* p_scroll, double p_amount);
+		void _scroll_to(ScrollBar* p_scroll, double p_pos);
+		void _cancel_drag();
+
 		void _draw_header(const Point2& pos, const float width, const Color& header_color, Ref<Texture2D> header_icon);
 		void _draw_time_ruler_ticks(float p_header_width);
 		void _draw_playhead(
@@ -93,7 +129,6 @@ namespace godot {
 		float _calculate_header_width() const;
 		float _calculate_grid_height() const;
 		
-		// 时间/拍/帧 与像素位置的转换
 		float _time_to_y(double p_time) const;
 		double _y_to_time(float p_y) const;
 		float _beat_to_y(double p_beat) const;
@@ -112,6 +147,7 @@ namespace godot {
 		VTimelinePanel();
 
 		virtual Vector2 _get_minimum_size() const override;
+		virtual void _gui_input(const Ref<InputEvent>& p_gui_input) override;
 
 		double get_time_from_position(const double p_position) const;
 		double get_frame_from_position(const double p_position) const;
@@ -185,12 +221,34 @@ namespace godot {
 
 		void set_track_components(const TypedArray<TimelinePanelTrackComponent>& p_track_components);
 		TypedArray<TimelinePanelTrackComponent> get_track_components() const;
+
+		void set_h_scroll(int p_pos);
+		int get_h_scroll() const;
+
+		void set_v_scroll(int p_pos);
+		int get_v_scroll() const;
+
+		void set_horizontal_custom_step(float p_custom_step);
+		float get_horizontal_custom_step() const;
+
+		void set_vertical_custom_step(float p_custom_step);
+		float get_vertical_custom_step() const;
+
+		void set_horizontal_scroll_mode(ScrollMode p_mode);
+		ScrollMode get_horizontal_scroll_mode() const;
+
+		void set_vertical_scroll_mode(ScrollMode p_mode);
+		ScrollMode get_vertical_scroll_mode() const;
+
+		void set_deadzone(int p_deadzone);
+		int get_deadzone() const;
 	};
 }
 
 VARIANT_ENUM_CAST(VTimelinePanel::CountingUnit);
 VARIANT_ENUM_CAST(VTimelinePanel::TimeFormat);
 VARIANT_ENUM_CAST(VTimelinePanel::BarNumberDirection);
+VARIANT_ENUM_CAST(VTimelinePanel::ScrollMode);
 
 #endif // !V_TIMELINE_PANEL_H
 

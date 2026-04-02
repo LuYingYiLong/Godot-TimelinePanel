@@ -6,7 +6,9 @@
 
 #include <godot_cpp/classes/font.hpp>
 #include <godot_cpp/classes/theme_db.hpp>
-#include <godot_cpp/variant/utility_functions.hpp>
+#include <godot_cpp/classes/input_event_mouse_button.hpp>
+#include <godot_cpp/classes/input_event_mouse_motion.hpp>
+#include <godot_cpp/classes/input_event_pan_gesture.hpp>
 
 namespace godot {
 	void VTimelinePanel::_bind_methods() {
@@ -20,6 +22,12 @@ namespace godot {
 
 		BIND_ENUM_CONSTANT(BAR_NUMBER_TOP_DOWN);
 		BIND_ENUM_CONSTANT(BAR_NUMBER_BOTTOM_UP);
+
+		BIND_ENUM_CONSTANT(SCROLL_MODE_DISABLED);
+		BIND_ENUM_CONSTANT(SCROLL_MODE_AUTO);
+		BIND_ENUM_CONSTANT(SCROLL_MODE_SHOW_ALWAYS);
+		BIND_ENUM_CONSTANT(SCROLL_MODE_SHOW_NEVER);
+		BIND_ENUM_CONSTANT(SCROLL_MODE_RESERVE);
 
 		ClassDB::bind_method(D_METHOD("get_time_from_position", "position"), &VTimelinePanel::get_time_from_position);
 		ClassDB::bind_method(D_METHOD("get_frame_from_position", "position"), &VTimelinePanel::get_frame_from_position);
@@ -123,6 +131,38 @@ namespace godot {
 		ClassDB::bind_method(D_METHOD("set_track_components", "track_components"), &VTimelinePanel::set_track_components);
 		ClassDB::bind_method(D_METHOD("get_track_components"), &VTimelinePanel::get_track_components);
 		ADD_PROPERTY(PropertyInfo(Variant::ARRAY, "component_track", PROPERTY_HINT_ARRAY_TYPE, "TimelinePanelTrackComponent", PROPERTY_USAGE_DEFAULT | PROPERTY_USAGE_EDITOR_INSTANTIATE_OBJECT), "set_track_components", "get_track_components");
+
+		ADD_GROUP("Scrollbar", "");
+		ClassDB::bind_method(D_METHOD("set_h_scroll", "value"), &VTimelinePanel::set_h_scroll);
+		ClassDB::bind_method(D_METHOD("get_h_scroll"), &VTimelinePanel::get_h_scroll);
+		ADD_PROPERTY(PropertyInfo(Variant::INT, "scroll_horizontal", PROPERTY_HINT_NONE, "suffix:px"), "set_h_scroll", "get_h_scroll");
+		
+		ClassDB::bind_method(D_METHOD("set_v_scroll", "value"), &VTimelinePanel::set_v_scroll);
+		ClassDB::bind_method(D_METHOD("get_v_scroll"), &VTimelinePanel::get_v_scroll);
+		ADD_PROPERTY(PropertyInfo(Variant::INT, "scroll_vertical", PROPERTY_HINT_NONE, "suffix:px"), "set_v_scroll", "get_v_scroll");
+		
+		ClassDB::bind_method(D_METHOD("set_horizontal_custom_step", "value"), &VTimelinePanel::set_horizontal_custom_step);
+		ClassDB::bind_method(D_METHOD("get_horizontal_custom_step"), &VTimelinePanel::get_horizontal_custom_step);
+		ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "scroll_horizontal_custom_step", PROPERTY_HINT_RANGE, "-1,4096,suffix:px"), "set_horizontal_custom_step", "get_horizontal_custom_step");
+		
+		ClassDB::bind_method(D_METHOD("set_vertical_custom_step", "value"), &VTimelinePanel::set_vertical_custom_step);
+		ClassDB::bind_method(D_METHOD("get_vertical_custom_step"), &VTimelinePanel::get_vertical_custom_step);
+		ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "scroll_vertical_custom_step", PROPERTY_HINT_RANGE, "-1,4096,suffix:px"), "set_vertical_custom_step", "get_vertical_custom_step");
+
+		ClassDB::bind_method(D_METHOD("set_horizontal_scroll_mode", "enable"), &VTimelinePanel::set_horizontal_scroll_mode);
+		ClassDB::bind_method(D_METHOD("get_horizontal_scroll_mode"), &VTimelinePanel::get_horizontal_scroll_mode);
+		ADD_PROPERTY(PropertyInfo(Variant::INT, "horizontal_scroll_mode", PROPERTY_HINT_ENUM, "Disabled,Auto,Always Show,Never Show,Reserve"), "set_horizontal_scroll_mode", "get_horizontal_scroll_mode");
+
+		ClassDB::bind_method(D_METHOD("set_vertical_scroll_mode", "enable"), &VTimelinePanel::set_vertical_scroll_mode);
+		ClassDB::bind_method(D_METHOD("get_vertical_scroll_mode"), &VTimelinePanel::get_vertical_scroll_mode);
+		ADD_PROPERTY(PropertyInfo(Variant::INT, "vertical_scroll_mode", PROPERTY_HINT_ENUM, "Disabled,Auto,Always Show,Never Show,Reserve"), "set_vertical_scroll_mode", "get_vertical_scroll_mode");
+
+		ClassDB::bind_method(D_METHOD("set_deadzone", "deadzone"), &VTimelinePanel::set_deadzone);
+		ClassDB::bind_method(D_METHOD("get_deadzone"), &VTimelinePanel::get_deadzone);
+		ADD_PROPERTY(PropertyInfo(Variant::INT, "scroll_deadzone"), "set_deadzone", "get_deadzone");
+
+		ADD_SIGNAL(MethodInfo("scroll_started"));
+		ADD_SIGNAL(MethodInfo("scroll_ended"));
 	}
 
 	void VTimelinePanel::_notification(int p_what) {
@@ -136,6 +176,7 @@ namespace godot {
 
 			// 先计算 header_width
 			header_width = _calculate_header_width();
+			content_width = header_width;
 
 			// 计算内容高度并更新滚动条
 			content_height = _calculate_grid_height();
@@ -157,6 +198,22 @@ namespace godot {
 
 			// 绘制时间尺刻度
 			_draw_time_ruler_ticks(header_width);
+
+			// 绘制分隔线
+			Vector2 start_pos;
+			if (time_ruler_component.is_valid()) {
+				float width = time_ruler_component->get_width();
+				draw_line(Point2(start_pos.x + width, header_height), Point2(start_pos.x + width, get_size().y), separator_color, separator_width);
+				start_pos.x += width;
+			}
+			for (int64_t i = 0; i < track_components.size(); i++) {
+				Ref<TimelinePanelTrackComponent> track_component = track_components[i];
+				if (track_component.is_null()) continue;
+
+				float width = track_component->get_width();
+				draw_line(Point2(start_pos.x + width, header_height), Point2(start_pos.x + width, get_size().y), separator_color, separator_width);
+				start_pos.x += width;
+			}
 
 			// 绘制播放头
 			if (playhead_component.is_valid()) {
@@ -197,18 +254,14 @@ namespace godot {
 			}
 
 			// 最后绘制 header
-			Vector2 start_pos;
-
+			start_pos = Vector2(0, 0);
 			if (time_ruler_component.is_valid()) {
 				float width = time_ruler_component->get_width();
 				Color header_color = time_ruler_component->get_header_color();
 				Ref<Texture2D> header_icon = time_ruler_component->get_header_icon();
 				_draw_header(start_pos, width, header_color, header_icon);
-
 				start_pos.x += width;
 			}
-			draw_line(Point2(start_pos.x, header_height), Point2(start_pos.x, get_size().y), separator_color, separator_width);
-
 			for (int64_t i = 0; i < track_components.size(); i++) {
 				Ref<TimelinePanelTrackComponent> track_component = track_components[i];
 				if (track_component.is_null()) continue;
@@ -217,10 +270,10 @@ namespace godot {
 				Color header_color = track_component->get_header_color();
 				Ref<Texture2D> header_icon = track_component->get_header_icon();
 				_draw_header(start_pos, width, header_color, header_icon);
-				draw_line(Point2(start_pos.x + width, header_height), Point2(start_pos.x + width, get_size().y), separator_color, separator_width);
-
 				start_pos.x += width;
 			}
+
+			draw_line(Point2(start_pos.x, header_height), Point2(start_pos.x, get_size().y), separator_color, separator_width);
 		} break;
 		}
 	}
@@ -252,12 +305,53 @@ namespace godot {
 	VTimelinePanel::VTimelinePanel() {
 		set_clip_contents(true);
 
+		hscroll = memnew(HScrollBar);
+		hscroll->set_step(0.001);
+		hscroll->set_anchor_and_offset(SIDE_LEFT, ANCHOR_BEGIN, 0);
+		hscroll->set_anchor_and_offset(SIDE_RIGHT, ANCHOR_END, 0);
+		hscroll->set_anchor_and_offset(SIDE_TOP, ANCHOR_END, 0);
+		hscroll->set_anchor_and_offset(SIDE_BOTTOM, ANCHOR_END, 0);
+		hscroll->hide();
+		hscroll->connect("value_changed", callable_mp(this, &VTimelinePanel::_h_scroll_changed));
+		add_child(hscroll, false, INTERNAL_MODE_FRONT);
+
 		vscroll = memnew(VScrollBar);
 		vscroll->set_step(0.001);
-		vscroll->set_anchor_and_offset(SIDE_BOTTOM, ANCHOR_END, 0);
+		vscroll->set_anchor_and_offset(SIDE_LEFT, ANCHOR_END, 0);
 		vscroll->set_anchor_and_offset(SIDE_RIGHT, ANCHOR_END, 0);
-		vscroll->connect("value_changed", callable_mp(this, &VTimelinePanel::_scroll_changed));
+		vscroll->set_anchor_and_offset(SIDE_TOP, ANCHOR_BEGIN, 0);
+		vscroll->set_anchor_and_offset(SIDE_BOTTOM, ANCHOR_END, 0);
+		vscroll->hide();
+		vscroll->connect("value_changed", callable_mp(this, &VTimelinePanel::_v_scroll_changed));
 		add_child(vscroll, false, INTERNAL_MODE_FRONT);
+	}
+
+	void VTimelinePanel::_scroll(ScrollBar* p_scroll, double p_amount) {
+		_scroll_to(p_scroll, p_scroll->get_value() + p_amount);
+	}
+
+	void VTimelinePanel::_scroll_to(ScrollBar* p_scroll, double p_pos) {
+		double pre_scroll = p_scroll->get_value();
+		p_scroll->set_value(p_pos);
+		if (!Math::is_equal_approx(pre_scroll, p_scroll->get_value())) {
+			p_scroll->emit_signal("scrolling");
+		}
+	}
+
+	void VTimelinePanel::_cancel_drag() {
+		set_process_internal(false);
+		drag_touching_deaccel = false;
+		drag_touching = false;
+		drag_speed = Vector2();
+		drag_accum = Vector2();
+		last_drag_accum = Vector2();
+		drag_from = Vector2();
+
+		if (beyond_deadzone) {
+			emit_signal("scroll_ended");
+			propagate_notification(NOTIFICATION_SCROLL_END);
+			beyond_deadzone = false;
+		}
 	}
 
 	void VTimelinePanel::_draw_header(const Point2& pos, const float width, const Color& header_color, Ref<Texture2D> header_icon) {
@@ -277,47 +371,62 @@ namespace godot {
 
 	float VTimelinePanel::_time_to_y(double p_time) const {
 		if (bar_number_direction == BAR_NUMBER_BOTTOM_UP) {
-			return header_height + content_height - p_time * scale - scroll_value;
+			return header_height + content_height - p_time * scale - vscroll_value;
 		}
-		return header_height + p_time * scale - scroll_value;
+		return header_height + p_time * scale - vscroll_value;
 	}
 
 	double VTimelinePanel::_y_to_time(float p_y) const {
+		double time;
 		if (bar_number_direction == BAR_NUMBER_BOTTOM_UP) {
-			return (header_height + content_height - p_y - scroll_value) / scale;
+			time = (header_height + content_height - p_y - vscroll_value) / scale;
+		} else {
+			time = (p_y - header_height + vscroll_value) / scale;
 		}
-		return (p_y - header_height + scroll_value) / scale;
+		if (time < 0) time = 0;
+		if (time > duration) time = duration;
+		return time;
 	}
 
 	float VTimelinePanel::_beat_to_y(double p_beat) const {
-		double bar = p_beat / beats_per_bar;
 		if (bar_number_direction == BAR_NUMBER_BOTTOM_UP) {
-			return header_height + content_height - bar * scale - scroll_value;
+			return header_height + content_height - p_beat * scale -vscroll_value;
 		}
-		return header_height + bar * scale - scroll_value;
+		return header_height + p_beat * scale - vscroll_value;
 	}
 
 	double VTimelinePanel::_y_to_beat(float p_y) const {
+		double beat;
 		if (bar_number_direction == BAR_NUMBER_BOTTOM_UP) {
-			double bar = (header_height + content_height - p_y - scroll_value) / scale;
-			return bar * beats_per_bar;
+			beat = (header_height + content_height - p_y - vscroll_value) / scale;
+		} else {
+			beat = (p_y - header_height + vscroll_value) / scale;
 		}
-		double bar = (p_y - header_height + scroll_value) / scale;
-		return bar * beats_per_bar;
+		// 限制 beat 在有效范围内
+		if (beat < 0) beat = 0;
+		double total_beats = content_height / scale;
+		if (beat > total_beats) beat = total_beats;
+		return beat;
 	}
 
 	float VTimelinePanel::_frame_to_y(int64_t p_frame) const {
 		if (bar_number_direction == BAR_NUMBER_BOTTOM_UP) {
-			return header_height + content_height - p_frame * scale - scroll_value;
+			return header_height + content_height - p_frame * scale - vscroll_value;
 		}
-		return header_height + p_frame * scale - scroll_value;
+		return header_height + p_frame * scale - vscroll_value;
 	}
 
 	int64_t VTimelinePanel::_y_to_frame(float p_y) const {
+		double frame;
 		if (bar_number_direction == BAR_NUMBER_BOTTOM_UP) {
-			return static_cast<int64_t>((header_height + content_height - p_y - scroll_value) / scale);
+			frame = (header_height + content_height - p_y - vscroll_value) / scale;
+		} else {
+			frame = (p_y - header_height + vscroll_value) / scale;
 		}
-		return static_cast<int64_t>((p_y - header_height + scroll_value) / scale);
+		if (frame < 0) frame = 0;
+		double total_frames = duration * fps;
+		if (frame > total_frames) frame = total_frames;
+		return static_cast<int64_t>(frame);
 	}
 
 	void VTimelinePanel::_on_resource_changed() {
@@ -326,30 +435,61 @@ namespace godot {
 	}
 
 	void VTimelinePanel::_update_scroll_bar() {
-		if (vscroll == nullptr) return;
+		if (hscroll == nullptr || vscroll == nullptr) return;
 
-		float visible_height = get_size().y - header_height;
-		bool show_scroll = content_height > visible_height;
+		Size2 hmin = hscroll->get_combined_minimum_size();
+		Size2 vmin = vscroll->get_combined_minimum_size();
+		Size2 size = get_size();
 
-		if (show_scroll) {
-			float scroll_width = vscroll->get_combined_minimum_size().x;
-			vscroll->set_anchor_and_offset(SIDE_LEFT, ANCHOR_END, -scroll_width);
-			vscroll->set_anchor_and_offset(SIDE_TOP, ANCHOR_BEGIN, header_height);
+		float content_width = _calculate_header_width();
 
-			updating_scroll = true;
-			vscroll->set_max(content_height);
-			vscroll->set_page(visible_height);
-			vscroll->set_visible(true);
-			updating_scroll = false;
-		} else {
-			vscroll->set_visible(false);
-			scroll_value = 0.0f;
+		bool h_scroll_show = horizontal_scroll_mode == SCROLL_MODE_SHOW_ALWAYS ||
+			(horizontal_scroll_mode == SCROLL_MODE_AUTO && content_width > size.x);
+		bool v_scroll_show = vertical_scroll_mode == SCROLL_MODE_SHOW_ALWAYS ||
+			(vertical_scroll_mode == SCROLL_MODE_AUTO && content_height > size.y - header_height);
+
+		updating_scroll = true;
+
+		if (h_scroll_show) {
+			hscroll->set_anchor_and_offset(SIDE_LEFT, ANCHOR_BEGIN, 0);
+			hscroll->set_anchor_and_offset(SIDE_RIGHT, ANCHOR_END, v_scroll_show ? -vmin.x : 0);
+			hscroll->set_anchor_and_offset(SIDE_TOP, ANCHOR_END, -hmin.y);
+			hscroll->set_anchor_and_offset(SIDE_BOTTOM, ANCHOR_END, 0);
+			hscroll->set_max(content_width);
+			hscroll->set_page(v_scroll_show ? size.x - vmin.x : size.x);
+			hscroll->show();
 		}
+		else {
+			hscroll->hide();
+			hscroll->set_value(0);
+		}
+
+		if (v_scroll_show) {
+			vscroll->set_anchor_and_offset(SIDE_LEFT, ANCHOR_END, -vmin.x);
+			vscroll->set_anchor_and_offset(SIDE_RIGHT, ANCHOR_END, 0);
+			vscroll->set_anchor_and_offset(SIDE_TOP, ANCHOR_BEGIN, header_height);
+			vscroll->set_anchor_and_offset(SIDE_BOTTOM, ANCHOR_END, h_scroll_show ? -hmin.y : 0);
+			vscroll->set_max(content_height);
+			vscroll->set_page(size.y - header_height - (h_scroll_show ? hmin.y : 0));
+			vscroll->show();
+		}
+		else {
+			vscroll->hide();
+			vscroll->set_value(0);
+		}
+
+		updating_scroll = false;
 	}
 
-	void VTimelinePanel::_scroll_changed(double p_value) {
+	void VTimelinePanel::_h_scroll_changed(double p_value) {
 		if (updating_scroll) return;
-		scroll_value = p_value;
+		hscroll_value = p_value;
+		queue_redraw();
+	}
+
+	void VTimelinePanel::_v_scroll_changed(double p_value) {
+		if (updating_scroll) return;
+		vscroll_value = p_value;
 		queue_redraw();
 	}
 
@@ -369,58 +509,45 @@ namespace godot {
 
 		switch (counting_unit) {
 		case BEAT: {
-			// 计算可见范围内的小节和拍
+			// 计算可见范围内的拍
 			double start_beat = _y_to_beat(visible_start_y);
 			double end_beat = _y_to_beat(visible_end_y);
-			// 确保 start_bar <= end_bar (考虑 Bottom Up 模式)
-			int start_bar = Math::floor(Math::min(start_beat, end_beat) / beats_per_bar);
-			int end_bar = Math::ceil(Math::max(start_beat, end_beat) / beats_per_bar);
+			int start_beat_i = Math::floor(Math::min(start_beat, end_beat));
+			int end_beat_i = Math::ceil(Math::max(start_beat, end_beat));
 
-			// 绘制小节数字
-			for (int bar = start_bar; bar <= end_bar; bar++) {
-				float y = _beat_to_y(bar * beats_per_bar);
+			// 绘制所有拍线
+			for (int beat = start_beat_i; beat <= end_beat_i; beat++) {
+				float y = _beat_to_y(beat);
 				if (y < visible_start_y || y > visible_end_y) continue;
 
+				// 判断是小节线还是拍线
+				bool is_bar_line = (beat % beats_per_bar) == 0;
+				float tick_height = is_bar_line ? major_tick_height : minor_tick_height;
+				float tick_width = is_bar_line ? major_tick_width : minor_tick_width;
+
 				draw_line(
-					Point2(ruler_width - major_tick_height, y),
+					Point2(ruler_width - tick_height, y),
 					Point2(ruler_width, y),
 					tick_color,
-					major_tick_width
+					tick_width
 				);
 
-				// 小节数字，转换函数已经处理了方向，直接显示 bar 即可
-				// 跳过太靠近边缘的小节数字 (避免与 header 重叠或显示 0)
-				bool should_draw_number = true;
-				if (bar_number_direction == BAR_NUMBER_BOTTOM_UP) {
-					// Bottom Up: 底部是 0，检查是否太靠近底部
-					if (y > get_size().y - margin) should_draw_number = false;
-				} else {
-					// Top Down: 顶部是 0，检查是否太靠近 header
-					if (y < visible_start_y + margin) should_draw_number = false;
-				}
-				
-				if (should_draw_number) {
-					// 使用默认字体绘制文字
-					String text = String::num_int64(bar);	
-					if (font.is_valid()) {
-						draw_string(font, Point2(2.0f, y + 6.0f), text, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, tick_color);
+				// 小节数字
+				if (is_bar_line) {
+					int bar = beat / beats_per_bar;
+					bool should_draw_number = true;
+					if (bar_number_direction == BAR_NUMBER_BOTTOM_UP) {
+						if (y > get_size().y - margin) should_draw_number = false;
+					} else {
+						if (y < visible_start_y + margin) should_draw_number = false;
 					}
-				}
-			}
 
-			// 绘制拍刻度
-			for (int bar = start_bar; bar <= end_bar; bar++) {
-				for (int beat = 1; beat < beats_per_bar; beat++) {
-					double beat_num = bar * beats_per_bar + beat;
-					float y = _beat_to_y(beat_num);
-					if (y < visible_start_y || y > visible_end_y) continue;
-
-					draw_line(
-						Point2(ruler_width - minor_tick_height, y),
-						Point2(ruler_width, y),
-						tick_color,
-						minor_tick_width
-					);
+					if (should_draw_number) {
+						String text = String::num_int64(bar);
+						if (font.is_valid()) {
+							draw_string(font, Point2(2.0f, y + 6.0f), text, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, tick_color);
+						}
+					}
 				}
 			}
 			break;
@@ -463,10 +590,11 @@ namespace godot {
 					bool should_draw_label = true;
 					if (bar_number_direction == BAR_NUMBER_BOTTOM_UP) {
 						if (y > get_size().y - margin) should_draw_label = false;
-					} else {
+					}
+					else {
 						if (y < visible_start_y + margin) should_draw_label = false;
 					}
-					
+
 					if (should_draw_label) {
 						String text = String::num_int64(frame / fps);
 						if (font.is_valid()) {
@@ -506,7 +634,7 @@ namespace godot {
 				if (y < visible_start_y || y > visible_end_y) continue;
 
 				bool is_major = Math::fmod(t, 1.0) < 0.001;
-				float tick_width = is_major ? major_tick_height: minor_tick_height;
+				float tick_width = is_major ? major_tick_height : minor_tick_height;
 
 				draw_line(
 					Point2(ruler_width - tick_width, y),
@@ -519,10 +647,11 @@ namespace godot {
 					bool should_draw_label = true;
 					if (bar_number_direction == BAR_NUMBER_BOTTOM_UP) {
 						if (y > get_size().y - margin) should_draw_label = false;
-					} else {
+					}
+					else {
 						if (y < visible_start_y + margin) should_draw_label = false;
 					}
-					
+
 					if (should_draw_label) {
 						String text;
 						switch (time_format) {
@@ -600,38 +729,28 @@ namespace godot {
 		float visible_start_y = header_height;
 		float visible_end_y = get_size().y;
 
-		// 计算可见范围内的小节和拍
+		// 计算可见范围内的拍
 		double start_beat = _y_to_beat(visible_start_y);
 		double end_beat = _y_to_beat(visible_end_y);
-		int start_bar = Math::floor(Math::min(start_beat, end_beat) / beats_per_bar);
-		int end_bar = Math::ceil(Math::max(start_beat, end_beat) / beats_per_bar);
+		int start_beat_i = Math::floor(Math::min(start_beat, end_beat));
+		int end_beat_i = Math::ceil(Math::max(start_beat, end_beat));
 
-		// 绘制小节线
-		for (int bar = start_bar; bar <= end_bar; bar++) {
-			float y = _beat_to_y(bar * beats_per_bar);
+		// 绘制所有拍线
+		for (int beat = start_beat_i; beat <= end_beat_i; beat++) {
+			float y = _beat_to_y(beat);
 			if (y < visible_start_y || y > visible_end_y) continue;
+
+			// 判断是小节线还是拍线
+			bool is_bar_line = (beat % beats_per_bar) == 0;
+			Color line_color = is_bar_line ? bar_line_color : beat_line_color;
+			float line_w = is_bar_line ? bar_line_width : beat_line_width;
 
 			draw_line(
 				Point2(start_pos, y),
 				Point2(p_header_width, y),
-				bar_line_color,
-				bar_line_width
+				line_color,
+				line_w
 			);
-		}
-
-		for (int bar = start_bar; bar <= end_bar; bar++) {
-			for (int beat = 1; beat < beats_per_bar; beat++) {
-				double beat_num = bar * beats_per_bar + beat;
-				float y = _beat_to_y(beat_num);
-				if (y < visible_start_y || y > visible_end_y) continue;
-
-				draw_line(
-					Point2(start_pos, y),
-					Point2(p_header_width, y),
-					beat_line_color,
-					beat_line_width
-				);
-			}
 		}
 	}
 
@@ -742,9 +861,8 @@ namespace godot {
 		case BEAT: {
 			float beat_duration = 60.0f / bpm;
 			double total_beats = duration / beat_duration;
-			double total_bars = total_beats / beats_per_bar;
-			if (total_bars < 1) total_bars = 1;
-			return total_bars * scale;
+			if (total_beats < 1) total_beats = 1;
+			return total_beats * scale;
 		}
 		case FRAME: {
 			double total_frames = duration * fps;
@@ -761,9 +879,193 @@ namespace godot {
 	}
 
 	Vector2 VTimelinePanel::_get_minimum_size() const {
-		float min_width = _calculate_header_width();
+		float min_width = 0.0f;
 		float min_height = header_height;
+
+		if (horizontal_scroll_mode == SCROLL_MODE_DISABLED) {
+			min_width = _calculate_header_width();
+			bool v_scroll_show = vertical_scroll_mode == SCROLL_MODE_SHOW_ALWAYS ||
+				vertical_scroll_mode == SCROLL_MODE_RESERVE ||
+				(vertical_scroll_mode == SCROLL_MODE_AUTO && content_height > get_size().y - header_height);
+			if (v_scroll_show && vscroll && vscroll->get_parent()) {
+				min_width += vscroll->get_minimum_size().x;
+			}
+		}
+
+		if (vertical_scroll_mode == SCROLL_MODE_DISABLED) {
+			min_height = header_height + content_height;
+			bool h_scroll_show = horizontal_scroll_mode == SCROLL_MODE_SHOW_ALWAYS ||
+				horizontal_scroll_mode == SCROLL_MODE_RESERVE ||
+				(horizontal_scroll_mode == SCROLL_MODE_AUTO && _calculate_header_width() > get_size().x);
+			if (h_scroll_show && hscroll && hscroll->get_parent()) {
+				min_height += hscroll->get_minimum_size().y;
+			}
+		}
+
 		return Size2(min_width, min_height);
+	}
+
+	void VTimelinePanel::_gui_input(const Ref<InputEvent>& p_gui_input) {
+		ERR_FAIL_COND(p_gui_input.is_null());
+
+		double prev_v_scroll = vscroll->get_value();
+		double prev_h_scroll = hscroll->get_value();
+		bool h_scroll_enabled = horizontal_scroll_mode != SCROLL_MODE_DISABLED;
+		bool v_scroll_enabled = vertical_scroll_mode != SCROLL_MODE_DISABLED;
+
+		Ref<InputEventMouseButton> mb = p_gui_input;
+
+		if (mb.is_valid()) {
+			if (mb->is_pressed()) {
+				bool scroll_value_modified = false;
+
+				bool v_scroll_hidden = !vscroll->is_visible() && vertical_scroll_mode != SCROLL_MODE_SHOW_NEVER;
+				if (mb->get_button_index() == MouseButton::MOUSE_BUTTON_WHEEL_UP) {
+					// 默认情况下，垂直方向优先。这是一个例外
+					if ((h_scroll_enabled && mb->is_shift_pressed()) || v_scroll_hidden) {
+						_scroll(hscroll, -hscroll->get_page() / 8 * mb->get_factor());
+						scroll_value_modified = true;
+					}
+					else if (v_scroll_enabled) {
+						_scroll(vscroll, -vscroll->get_page() / 8 * mb->get_factor());
+						scroll_value_modified = true;
+					}
+				}
+				if (mb->get_button_index() == MouseButton::MOUSE_BUTTON_WHEEL_DOWN) {
+					if ((h_scroll_enabled && mb->is_shift_pressed()) || v_scroll_hidden) {
+						_scroll(hscroll, hscroll->get_page() / 8 * mb->get_factor());
+						scroll_value_modified = true;
+					}
+					else if (v_scroll_enabled) {
+						_scroll(vscroll, vscroll->get_page() / 8 * mb->get_factor());
+						scroll_value_modified = true;
+					}
+				}
+
+				bool h_scroll_hidden = !hscroll->is_visible() && horizontal_scroll_mode != SCROLL_MODE_SHOW_NEVER;
+				if (mb->get_button_index() == MouseButton::MOUSE_BUTTON_WHEEL_LEFT) {
+					// 默认情况下，水平方向优先。这是一个例外
+					if ((v_scroll_enabled && mb->is_shift_pressed()) || h_scroll_hidden) {
+						_scroll(vscroll , -vscroll->get_page() / 8 * mb->get_factor());
+						scroll_value_modified = true;
+					}
+					else if (h_scroll_enabled) {
+						_scroll(hscroll, -hscroll->get_page() / 8 * mb->get_factor());
+						scroll_value_modified = true;
+					}
+				}
+				if (mb->get_button_index() == MouseButton::MOUSE_BUTTON_WHEEL_RIGHT) {
+					if ((v_scroll_enabled && mb->is_shift_pressed()) || h_scroll_hidden) {
+						_scroll(vscroll, vscroll->get_page() / 8 * mb->get_factor());
+						scroll_value_modified = true;
+					}
+					else if (h_scroll_enabled) {
+						_scroll(hscroll, hscroll->get_page() / 8 * mb->get_factor());
+						scroll_value_modified = true;
+					}
+				}
+
+				if (scroll_value_modified && (vscroll->get_value() != prev_v_scroll || hscroll->get_value() != prev_h_scroll)) {
+					// 如果滚动发生变化则接受事件
+					accept_event();
+					return;
+				}
+			}
+
+			bool is_touchscreen_available = DisplayServer::get_singleton()->is_touchscreen_available();
+			if (!is_touchscreen_available) {
+				return;
+			}
+
+			if (mb->get_button_index() != MouseButton::MOUSE_BUTTON_LEFT) {
+				return;
+			}
+
+			if (mb->is_pressed()) {
+				if (drag_touching) {
+					_cancel_drag();
+				}
+
+				drag_speed = Vector2();
+				drag_accum = Vector2();
+				last_drag_accum = Vector2();
+				drag_from = Vector2(prev_h_scroll, prev_v_scroll);
+				drag_touching = true;
+				drag_touching_deaccel = false;
+				beyond_deadzone = false;
+				time_since_motion = 0;
+				set_process_internal(true);
+				time_since_motion = 0;
+
+			}
+			else {
+				if (drag_touching) {
+					if (drag_speed == Vector2()) {
+						_cancel_drag();
+					}
+					else {
+						drag_touching_deaccel = true;
+					}
+				}
+			}
+			return;
+		}
+
+		Ref<InputEventMouseMotion> mm = p_gui_input;
+
+		if (mm.is_valid()) {
+			if (drag_touching && !drag_touching_deaccel) {
+				Vector2 motion = mm->get_relative();
+				drag_accum -= motion;
+
+				if (beyond_deadzone || (h_scroll_enabled && Math::abs(drag_accum.x) > deadzone) || (v_scroll_enabled && Math::abs(drag_accum.y) > deadzone)) {
+					if (!beyond_deadzone) {
+						propagate_notification(NOTIFICATION_SCROLL_BEGIN);
+						emit_signal("scroll_started");
+
+						beyond_deadzone = true;
+						// 在此重置 drag_accum 可确保达到死区后滚动平滑
+						drag_accum = -motion;
+					}
+					Vector2 diff = drag_from + drag_accum;
+					if (h_scroll_enabled) {
+						_scroll_to(hscroll, diff.x);
+					}
+					else {
+						drag_accum.x = 0;
+					}
+					if (v_scroll_enabled) {
+						_scroll_to(vscroll, diff.y);
+					}
+					else {
+						drag_accum.y = 0;
+					}
+					time_since_motion = 0;
+				}
+			}
+
+			if (vscroll->get_value() != prev_v_scroll || hscroll->get_value() != prev_h_scroll) {
+				// 如果滚动发生变化则接受事件
+				accept_event();
+			}
+			return;
+		}
+
+		Ref<InputEventPanGesture> pan_gesture = p_gui_input;
+		if (pan_gesture.is_valid()) {
+			if (h_scroll_enabled) {
+				_scroll(hscroll, hscroll->get_page() * pan_gesture->get_delta().x / 8);
+			}
+			if (v_scroll_enabled) {
+				_scroll(vscroll, vscroll->get_page() * pan_gesture->get_delta().y / 8);
+			}
+
+			if (vscroll->get_value() != prev_v_scroll || hscroll->get_value() != prev_h_scroll) {
+				// 如果滚动发生变化则接受事件
+				accept_event();
+			}
+			return;
+		}
 	}
 
 	double VTimelinePanel::get_time_from_position(const double p_position) const {
@@ -1008,5 +1310,71 @@ namespace godot {
 
 	TypedArray<TimelinePanelTrackComponent> VTimelinePanel::get_track_components() const {
 		return track_components;
+	}
+
+	void VTimelinePanel::set_h_scroll(int p_pos) {
+		hscroll->set_value(p_pos);
+	}
+
+	int VTimelinePanel::get_h_scroll() const {
+		return hscroll->get_value();
+	}
+
+	void VTimelinePanel::set_v_scroll(int p_pos) {
+		vscroll->set_value(p_pos);
+	}
+
+	int VTimelinePanel::get_v_scroll() const {
+		return vscroll->get_value();
+	}
+
+	void VTimelinePanel::set_horizontal_custom_step(float p_custom_step) {
+		hscroll->set_custom_step(p_custom_step);
+	}
+
+	float VTimelinePanel::get_horizontal_custom_step() const {
+		return hscroll->get_custom_step();
+	}
+
+	void VTimelinePanel::set_vertical_custom_step(float p_custom_step) {
+		vscroll->set_custom_step(p_custom_step);
+	}
+
+	float VTimelinePanel::get_vertical_custom_step() const {
+		return vscroll->get_custom_step();
+	}
+
+	void VTimelinePanel::set_horizontal_scroll_mode(ScrollMode p_mode) {
+		if (horizontal_scroll_mode == p_mode) {
+			return;
+		}
+
+		horizontal_scroll_mode = p_mode;
+		update_minimum_size();
+	}
+
+	VTimelinePanel::ScrollMode VTimelinePanel::get_horizontal_scroll_mode() const {
+		return horizontal_scroll_mode;
+	}
+
+	void VTimelinePanel::set_vertical_scroll_mode(ScrollMode p_mode) {
+		if (vertical_scroll_mode == p_mode) {
+			return;
+		}
+
+		vertical_scroll_mode = p_mode;
+		update_minimum_size();
+	}
+
+	VTimelinePanel::ScrollMode VTimelinePanel::get_vertical_scroll_mode() const {
+		return vertical_scroll_mode;
+	}
+
+	void VTimelinePanel::set_deadzone(int p_deadzone) {
+		deadzone = p_deadzone;
+	}
+
+	int VTimelinePanel::get_deadzone() const {
+		return deadzone;
 	}
 }
