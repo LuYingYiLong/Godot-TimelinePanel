@@ -10,9 +10,13 @@ namespace godot {
 		ClassDB::bind_method(D_METHOD("get_header_icon"), &TimelinePanelTrackComponent::get_header_icon);
 		ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "header_icon", PROPERTY_HINT_RESOURCE_TYPE, "Texture2D"), "set_header_icon", "get_header_icon");
 
-		ClassDB::bind_method(D_METHOD("set_header_color", "header_color"), &TimelinePanelTrackComponent::set_header_color);
-		ClassDB::bind_method(D_METHOD("get_header_color"), &TimelinePanelTrackComponent::get_header_color);
-		ADD_PROPERTY(PropertyInfo(Variant::COLOR, "header_color"), "set_header_color", "get_header_color");
+		ClassDB::bind_method(D_METHOD("set_header_background", "style"), &TimelinePanelTrackComponent::set_header_background);
+		ClassDB::bind_method(D_METHOD("get_header_background"), &TimelinePanelTrackComponent::get_header_background);
+		ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "header_background", PROPERTY_HINT_RESOURCE_TYPE, "StyleBox"), "set_header_background", "get_header_background");
+	}
+
+	void TimelinePanelTrackComponent::_on_resource_changed() {
+		emit_changed();
 	}
 
 	void TimelinePanelTrackComponent::set_width(const float p_width) {
@@ -33,13 +37,16 @@ namespace godot {
 		return header_icon;
 	}
 
-	void TimelinePanelTrackComponent::set_header_color(const Color& p_color) {
-		header_color = p_color;
+	void TimelinePanelTrackComponent::set_header_background(const Ref<StyleBox> p_style) {
+		header_background = p_style;
+		if (header_background.is_valid()) {
+			header_background->connect("changed", callable_mp(this, &TimelinePanelTrackComponent::_on_resource_changed));
+		}
 		emit_changed();
 	}
 
-	Color TimelinePanelTrackComponent::get_header_color() const {
-		return header_color;
+	Ref<StyleBox> TimelinePanelTrackComponent::get_header_background() const {
+		return header_background;
 	}
 
 	void TimelinePanelTrackComponent::set_tooltip_text(const String& p_tooltip) {

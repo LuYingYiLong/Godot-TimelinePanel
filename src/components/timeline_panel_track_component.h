@@ -4,6 +4,7 @@
 #include "timeline_panel_base_component.h"
 
 #include <godot_cpp/classes/texture2d.hpp>
+#include <godot_cpp/classes/style_box.hpp>
 
 namespace godot {
 	class TimelinePanelTrackComponent : public TimelinePanelBaseComponent {
@@ -12,8 +13,10 @@ namespace godot {
 	private:
 		float width = 32.0f;
 		Ref<Texture2D> header_icon;
-		Color header_color;
+		Ref<StyleBox> header_background;
 		String tooltip_text;
+
+		void _on_resource_changed();
 
 	protected:
 		static void _bind_methods();
@@ -25,8 +28,8 @@ namespace godot {
 		void set_header_icon(Ref<Texture2D> p_header_icon);
 		Ref<Texture2D> get_header_icon() const;
 
-		void set_header_color(const Color& p_color);
-		Color get_header_color() const;
+		void set_header_background(const Ref<StyleBox> p_style);
+		Ref<StyleBox> get_header_background() const;
 
 		void set_tooltip_text(const String& p_tooltip);
 		String get_tooltip_text() const;

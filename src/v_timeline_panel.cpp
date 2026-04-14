@@ -255,9 +255,9 @@ namespace godot {
 			start_pos = Vector2(0, 0);
 			if (time_ruler_component.is_valid()) {
 				float width = time_ruler_component->get_width();
-				Color header_color = time_ruler_component->get_header_color();
+				Ref<StyleBox> header_background = time_ruler_component->get_header_background();
 				Ref<Texture2D> header_icon = time_ruler_component->get_header_icon();
-				_draw_header(start_pos, width, header_color, header_icon);
+				_draw_header(start_pos, width, header_background, header_icon);
 				start_pos.x += width;
 			}
 			for (int64_t i = 0; i < track_components.size(); i++) {
@@ -265,9 +265,9 @@ namespace godot {
 				if (track_component.is_null()) continue;
 
 				float width = track_component->get_width();
-				Color header_color = track_component->get_header_color();
+				Ref<StyleBox> header_background = track_component->get_header_background();
 				Ref<Texture2D> header_icon = track_component->get_header_icon();
-				_draw_header(start_pos, width, header_color, header_icon);
+				_draw_header(start_pos, width, header_background, header_icon);
 				start_pos.x += width;
 			}
 
@@ -352,8 +352,10 @@ namespace godot {
 		}
 	}
 
-	void VTimelinePanel::_draw_header(const Point2& pos, const float width, const Color& header_color, Ref<Texture2D> header_icon) {
-		draw_rect(Rect2(pos, Size2(width, header_height)), header_color);
+	void VTimelinePanel::_draw_header(const Point2& pos, const float width, const Ref<StyleBox> header_bg, Ref<Texture2D> header_icon) {
+		if (header_bg.is_valid()) {
+			draw_style_box(header_bg, Rect2(pos, Size2(width, header_height)));
+		}
 
 		if (header_icon.is_valid()) {
 			Size2 tex_size = header_icon->get_size();
@@ -514,10 +516,19 @@ namespace godot {
 	}
 
 	float VTimelinePanel::_time_to_y(double p_time) const {
-		if (bar_number_direction == BAR_NUMBER_BOTTOM_UP) {
-			return header_height + content_height - p_time * scale - vscroll_value;
+		if (counting_unit == BEAT) {
+			double row = _time_to_beat(p_time) * beats_per_bar;
+			if (bar_number_direction == BAR_NUMBER_BOTTOM_UP) {
+				return header_height + content_height - row * (scale / beats_per_bar) -vscroll_value;
+			}
+			return header_height + row * (scale / beats_per_bar) - vscroll_value;
 		}
-		return header_height + p_time * scale - vscroll_value;
+		else {
+			if (bar_number_direction == BAR_NUMBER_BOTTOM_UP) {
+				return header_height + content_height - p_time * scale - vscroll_value;
+			}
+			return header_height + p_time * scale - vscroll_value;
+		}
 	}
 
 	double VTimelinePanel::_y_to_time(float p_y) const {
@@ -532,6 +543,63 @@ namespace godot {
 		return time;
 	}
 
+	double VTimelinePanel::_time_to_beat(double time_sec) const {
+		Array seg_map = beat_map;
+
+		for (int index = 0; index < seg_map.size(); ++index) {
+			Dictionary seg = seg_map[index];
+			double from_sec = seg.get("from_sec", 0.0);
+			double to_sec = seg.get("to_sec", 0.0);
+			double from_beat = seg.get("from_beat", 0.0);
+			double to_beat = seg.get("to_beat", 0.0);
+
+			if (time_sec >= from_sec && time_sec < to_sec) {
+				double time = (time_sec - from_sec) / (to_sec - from_sec);
+				return UtilityFunctions::lerpf(from_beat, to_beat, time);
+			}
+		}
+
+		// 超尾
+		if (seg_map.is_empty()) return 0.0;
+
+		Dictionary last = seg_map[seg_map.size() - 1];
+		double to_sec = last.get("to_sec", 0.0);
+		double to_beat = last.get("to_beat", 0.0);
+		int bpm = last.get("bpm", 0);
+		double extra_sec = time_sec - to_sec;
+		double extra_beat_cout = extra_sec * bpm / 60.0;
+		return to_beat + extra_beat_cout;
+	}
+
+	double VTimelinePanel::_beat_to_time(double beat) const {
+		Array seg_map = time_map;
+
+		for (int index = 0; index < seg_map.size(); ++index) {
+			Dictionary seg = seg_map[index];
+			double from_sec = seg.get("from_sec", 0.0);
+			double from_beat = seg.get("from_beat", 0.0);
+			double to_beat = seg.get("to_beat", 0.0);
+			int bpm = seg.get("bpm", 0);
+
+			if (beat < from_beat) continue;
+			if (beat >= to_beat) continue;
+
+			double time = (beat - from_beat) / (to_beat - from_beat);
+			return UtilityFunctions::lerpf(from_sec, from_sec + (to_beat - from_beat) * 60.0 / bpm, time);
+		}
+
+		// 超尾
+		if (seg_map.is_empty()) return 0.0;
+
+		Dictionary last = seg_map[seg_map.size() - 1];
+		double from_sec = last.get("from_sec", 0.0);
+		double from_beat = last.get("from_beat", 0.0);
+		int bpm = last.get("bpm", 0);
+		double extra_beats = beat - from_beat;
+		double extra_sec = extra_beats * 60.0 / bpm;
+		return from_sec + extra_sec;
+	}
+
 	float VTimelinePanel::_beat_to_y(double p_beat) const {
 		if (bar_number_direction == BAR_NUMBER_BOTTOM_UP) {
 			return header_height + content_height - p_beat * (scale / beats_per_bar) -vscroll_value;
@@ -542,13 +610,13 @@ namespace godot {
 	double VTimelinePanel::_y_to_beat(float p_y) const {
 		double beat;
 		if (bar_number_direction == BAR_NUMBER_BOTTOM_UP) {
-			beat = (header_height + content_height - p_y - vscroll_value) / scale;
+			beat = (header_height + content_height - p_y - vscroll_value) / (scale / beats_per_bar);
 		} else {
-			beat = (p_y - header_height + vscroll_value) / scale;
+			beat = (p_y - header_height + vscroll_value) / (scale / beats_per_bar);
 		}
 		// 限制 beat 在有效范围内
 		if (beat < 0) beat = 0;
-		double total_beats = content_height / scale;
+		double total_beats = content_height / (scale / beats_per_bar);
 		if (beat > total_beats) beat = total_beats;
 		return beat;
 	}
@@ -872,8 +940,8 @@ namespace godot {
 		float visible_end_y = get_size().y;
 
 		// 计算可见范围内的拍
-		double start_beat = _y_to_beat(visible_start_y) * beats_per_bar;
-		double end_beat = _y_to_beat(visible_end_y) * beats_per_bar;
+		double start_beat = _y_to_beat(visible_start_y);
+		double end_beat = _y_to_beat(visible_end_y);
 		int start_beat_i = Math::floor(Math::min(start_beat, end_beat));
 		int end_beat_i = Math::ceil(Math::max(start_beat, end_beat));
 

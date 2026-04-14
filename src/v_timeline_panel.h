@@ -116,7 +116,7 @@ namespace godot {
 		void _scroll_to(ScrollBar* p_scroll, double p_pos);
 		void _cancel_drag();
 
-		void _draw_header(const Point2& pos, const float width, const Color& header_color, Ref<Texture2D> header_icon);
+		void _draw_header(const Point2& pos, const float width, const Ref<StyleBox> header_bg, Ref<Texture2D> header_icon);
 		void _draw_time_ruler_ticks(float p_header_width);
 		void _draw_playhead(
 			const PackedVector2Array& points,
@@ -147,6 +147,8 @@ namespace godot {
 		void _calculate_row_total();
 		float _time_to_y(double p_time) const;
 		double _y_to_time(float p_y) const;
+		double _time_to_beat(double p_time) const;
+		double _beat_to_time(double p_beat) const;
 		float _beat_to_y(double p_beat) const;
 		double _y_to_beat(float p_y) const;
 		float _frame_to_y(int64_t p_frame) const;

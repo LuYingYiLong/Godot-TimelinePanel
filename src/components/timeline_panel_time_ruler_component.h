@@ -3,6 +3,7 @@
 
 #include "timeline_panel_base_component.h"
 #include <godot_cpp/classes/texture2d.hpp>
+#include <godot_cpp/classes/style_box.hpp>
 #include <godot_cpp/core/gdvirtual.gen.inc>
 
 namespace godot {
@@ -11,7 +12,7 @@ namespace godot {
 
 	private:
 		float width = 64.0f;
-		Color header_color = Color("#ff7931");
+		Ref<StyleBox> header_background;
 		Ref<Texture2D> header_icon;
 		float major_tick_height = 20.0f;
 		float major_tick_width = -1.0f;
@@ -24,6 +25,8 @@ namespace godot {
 		Color playhead_text_color = Color("#000000");
 		float playhead_line_width = 2.0f;
 
+		void _on_resource_changed();
+
 	protected:
 		static void _bind_methods();
 
@@ -34,8 +37,8 @@ namespace godot {
 		void set_header_icon(Ref<Texture2D> p_header_icon);
 		Ref<Texture2D> get_header_icon() const;
 
-		void set_header_color(const Color& p_color);
-		Color get_header_color() const;
+		void set_header_background(const Ref<StyleBox> p_style);
+		Ref<StyleBox> get_header_background() const;
 
 		void set_major_tick_height(const float p_height);
 		float get_major_tick_height() const;
