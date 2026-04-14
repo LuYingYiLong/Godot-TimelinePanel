@@ -80,12 +80,19 @@ namespace godot {
 		int fps = 24;
 		bool show_subdivision = true;
 
-		int bpm = 120;
+		struct BPM {
+			float time;
+			int bpms;
+
+			BPM(float p_time, int p_bpm) : time(p_time), bpms(p_bpm) {}
+		};
+
+		Dictionary bpms;
 		int beats_per_bar = 4;
-		Color bar_line_color = Color("#ff7384");
-		float bar_line_width = 1.0f;
-		Color beat_line_color = Color("#5f8fc9");
-		float beat_line_width = -1.0f;
+		Color beat_line_color = Color("#ff7384");
+		float beat_line_width = 1.0f;
+		Color bar_line_color = Color("#5f8fc9");
+		float bar_line_width = -1.0f;
 		BarNumberDirection bar_number_direction = BAR_NUMBER_TOP_DOWN;
 		
 		HScrollBar* hscroll = nullptr;
@@ -129,6 +136,15 @@ namespace godot {
 		float _calculate_header_width() const;
 		float _calculate_grid_height() const;
 		
+		Array beat_map;
+		Array time_map;
+		double _beat_total = 0;
+		int _row_total = 0;
+
+		void _build_time_to_beat_map();
+		void _build_beat_to_time_map();
+		void _calculate_beat_total();
+		void _calculate_row_total();
 		float _time_to_y(double p_time) const;
 		double _y_to_time(float p_y) const;
 		float _beat_to_y(double p_beat) const;
@@ -192,8 +208,8 @@ namespace godot {
 		void set_show_subdivision(const bool p_show_subdivision);
 		bool get_show_subdivision() const;
 
-		void set_bpm(const int p_bpm);
-		int get_bpm() const;
+		void set_bpms(const Dictionary& p_bpms);
+		Dictionary get_bpms() const;
 
 		void set_beat_per_bar(const int p_beats_per_bar);
 		int get_beat_per_bar() const;

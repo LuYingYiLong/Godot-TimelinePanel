@@ -79,21 +79,13 @@ namespace godot {
 		ADD_PROPERTY(PropertyInfo(Variant::INT, "frame_show_subdivision"), "set_show_subdivision", "get_show_subdivision");
 
 		ADD_GROUP("Beat", "beat_");
-		ClassDB::bind_method(D_METHOD("set_bpm", "bpm"), &VTimelinePanel::set_bpm);
-		ClassDB::bind_method(D_METHOD("get_bpm"), &VTimelinePanel::get_bpm);
-		ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "beat_bpm"), "set_bpm", "get_bpm");
+		ClassDB::bind_method(D_METHOD("set_bpms", "bpms"), &VTimelinePanel::set_bpms);
+		ClassDB::bind_method(D_METHOD("get_bpms"), &VTimelinePanel::get_bpms);
+		ADD_PROPERTY(PropertyInfo(Variant::DICTIONARY, "beat_bpms", PROPERTY_HINT_DICTIONARY_TYPE, "float;int"), "set_bpms", "get_bpms");
 
 		ClassDB::bind_method(D_METHOD("set_beat_per_bar", "num"), &VTimelinePanel::set_beat_per_bar);
 		ClassDB::bind_method(D_METHOD("get_beat_per_bar"), &VTimelinePanel::get_beat_per_bar);
 		ADD_PROPERTY(PropertyInfo(Variant::INT, "beat_per_bar"), "set_beat_per_bar", "get_beat_per_bar");
-
-		ClassDB::bind_method(D_METHOD("set_bar_line_color", "color"), &VTimelinePanel::set_bar_line_color);
-		ClassDB::bind_method(D_METHOD("get_bar_line_color"), &VTimelinePanel::get_bar_line_color);
-		ADD_PROPERTY(PropertyInfo(Variant::COLOR, "beat_bar_line_color"), "set_bar_line_color", "get_bar_line_color");
-
-		ClassDB::bind_method(D_METHOD("set_bar_line_width", "width"), &VTimelinePanel::set_bar_line_width);
-		ClassDB::bind_method(D_METHOD("get_bar_line_width"), &VTimelinePanel::get_bar_line_width);
-		ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "beat_bar_line_width"), "set_bar_line_width", "get_bar_line_width");
 
 		ClassDB::bind_method(D_METHOD("set_beat_line_color", "color"), &VTimelinePanel::set_beat_line_color);
 		ClassDB::bind_method(D_METHOD("get_beat_line_color"), &VTimelinePanel::get_beat_line_color);
@@ -102,6 +94,14 @@ namespace godot {
 		ClassDB::bind_method(D_METHOD("set_beat_line_width", "width"), &VTimelinePanel::set_beat_line_width);
 		ClassDB::bind_method(D_METHOD("get_beat_line_width"), &VTimelinePanel::get_beat_line_width);
 		ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "beat_beat_line_width"), "set_beat_line_width", "get_beat_line_width");
+
+		ClassDB::bind_method(D_METHOD("set_bar_line_color", "color"), &VTimelinePanel::set_bar_line_color);
+		ClassDB::bind_method(D_METHOD("get_bar_line_color"), &VTimelinePanel::get_bar_line_color);
+		ADD_PROPERTY(PropertyInfo(Variant::COLOR, "beat_bar_line_color"), "set_bar_line_color", "get_bar_line_color");
+
+		ClassDB::bind_method(D_METHOD("set_bar_line_width", "width"), &VTimelinePanel::set_bar_line_width);
+		ClassDB::bind_method(D_METHOD("get_bar_line_width"), &VTimelinePanel::get_bar_line_width);
+		ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "beat_bar_line_width"), "set_bar_line_width", "get_bar_line_width");
 
 		ClassDB::bind_method(D_METHOD("set_bar_number_direction", "direction"), &VTimelinePanel::set_bar_number_direction);
 		ClassDB::bind_method(D_METHOD("get_bar_number_direction"), &VTimelinePanel::get_bar_number_direction);
@@ -230,9 +230,7 @@ namespace godot {
 					break;
 				}
 				case BEAT: {
-					double beat_duration = 60.0 / bpm;
-					double beat = current_time / beat_duration;
-					current_position = get_position_from_beat(beat);
+					current_position = _time_to_y(current_time);
 					break;
 				}
 				case TIME:
@@ -359,14 +357,160 @@ namespace godot {
 
 		if (header_icon.is_valid()) {
 			Size2 tex_size = header_icon->get_size();
+
 			// 计算缩放比例，选择较小的那个以保持比例并限制在区域内
 			Size2 scale_size(width / tex_size.width, header_height / tex_size.height);
 			float scale = scale_size.width < scale_size.height ? scale_size.width : scale_size.height;
 			Size2 scaled_tex_size = tex_size * scale;
+
 			// 计算居中偏移
 			Point2 offset = (Size2(width, header_height) - scaled_tex_size) / 2;
 			draw_texture_rect(header_icon, Rect2(pos + offset, scaled_tex_size), false);
 		}
+	}
+
+	void VTimelinePanel::_build_time_to_beat_map() {
+		Array map;
+		Array sorted_beats;
+		Array keys = bpms.keys();
+
+		for (int index = 0; index < bpms.size(); ++index) {
+			double time = keys[index];
+			Dictionary current_bpm = bpms.get(time, 120);
+			sorted_beats.append(current_bpm.get("beat", 0.0));
+		}
+		double current_sec = 0.0;
+
+		for (int64_t index = 0; index < sorted_beats.size(); ++index) {
+			double time = keys[index];
+			Dictionary current_bpm = bpms.get(time, 120);
+			double from_beat = sorted_beats[index];
+			double to_beat = INFINITY;
+			int bpm = current_bpm.get("bpm", 120);
+
+			if (bpm == 0) bpm = 120;
+
+			// 最后一段用剩余秒数反推拍数
+			double sec_left = duration - current_sec;
+
+			if (index == sorted_beats.size() - 1) {
+				to_beat = _beat_total;
+				Dictionary result = Dictionary();
+				result["from_sec"] = current_sec;
+				result["to_sec"] = duration;
+				result["from_beat"] = from_beat;
+				result["to_beat"] = to_beat;
+				result["bpm"] = bpm;
+				map.append(result);
+				break;
+			}
+
+			// 普通段
+			to_beat = sorted_beats[index + 1];
+			double beats_in_seg = to_beat - from_beat;
+			double sec_in_seg = beats_in_seg * 60.0 / bpm;
+			Dictionary result = Dictionary();
+			result["from_sec"] = current_sec;
+			result["to_sec"] = current_sec + sec_in_seg;
+			result["from_beat"] = from_beat;
+			result["to_beat"] = to_beat;
+			result["bpm"] = bpm;
+			map.append(result);
+			current_sec += sec_in_seg;
+		}
+		beat_map = map;
+	}
+
+	void VTimelinePanel::_build_beat_to_time_map() {
+		Array map;
+		Array sorted_beats;
+		Array keys = bpms.keys();
+
+		for (int index = 0; index < bpms.size(); ++index) {
+			double time = keys[index];
+			Dictionary current_bpm = bpms.get(time, 120);
+			sorted_beats.append(current_bpm.get("beat", 0.0));
+		}
+
+		double current_map_end_beat = _beat_total;
+		double current_sec = 0.0;
+
+		for (int64_t index = 0; index < sorted_beats.size(); ++index) {
+			double from_beat = sorted_beats[index];
+			double time = keys[index];
+			Dictionary current_bpm = bpms.get(time, 120);
+			int bpm = current_bpm.get("bpm", 120);
+
+			// 最后一段
+			if (index == sorted_beats.size() - 1) {
+				Dictionary result = Dictionary();
+				result["from_sec"] = current_sec;
+				result["from_beat"] = from_beat;
+				result["to_beat"] = current_map_end_beat;
+				result["bpm"] = bpm;
+				map.append(result);
+				break;
+			}
+
+			double to_beat_in_seg = sorted_beats[index + 1];
+			double beats_in_seg = to_beat_in_seg - from_beat;
+			double sec_in_seg = beats_in_seg * 60.0 / bpm;
+			Dictionary result = Dictionary();
+			result["from_sec"] = current_sec;
+			result["from_beat"] = from_beat;
+			result["to_beat"] = to_beat_in_seg;
+			result["bpm"] = bpm;
+			map.append(result);
+			current_sec += sec_in_seg;
+		}
+		time_map = map;
+	}
+
+	void VTimelinePanel::_calculate_beat_total() {
+		if (bpms.is_empty()) {
+			_beat_total = 0.0;
+			return;
+		}
+
+		double current_sec = 0.0;
+		double current_beat = 0.0;
+		Array keys = bpms.keys();
+
+		for (int64_t index = 0; index < bpms.size(); ++index) {
+			double time = keys[index];
+			Dictionary current_bpm = bpms.get(time, 120);
+			int from_beat = current_bpm.get("beat", 0.0);
+			int bpm = current_bpm.get("bpm", 120);
+
+			if (bpm == 0) bpm = 120;
+
+			// 用剩余秒数反推拍数
+			if (index == bpms.size() - 1) {
+				double sec_left = duration - current_sec;
+
+				// 防止精度误差导致负数
+				if (sec_left < 0) sec_left = 0;
+
+				double beats_left = sec_left * bpm / 60.0;
+				_beat_total = from_beat + beats_left;
+				break;
+			}
+
+			// 普通段
+			double next_time = keys[index + 1];
+			Dictionary next_bpm = bpms.get(next_time, 120);
+			int to_beat = next_bpm.get("beat", 0.0);
+			int beats_seg = to_beat - from_beat;
+			if (bpm == 0) bpm = 120.0;
+
+			double sec_seg = beats_seg * 60.0 / bpm;
+			current_sec += sec_seg;
+			current_beat = to_beat;
+		}
+	}
+
+	void VTimelinePanel::_calculate_row_total() {
+		_row_total = _beat_total * beats_per_bar;
 	}
 
 	float VTimelinePanel::_time_to_y(double p_time) const {
@@ -390,9 +534,9 @@ namespace godot {
 
 	float VTimelinePanel::_beat_to_y(double p_beat) const {
 		if (bar_number_direction == BAR_NUMBER_BOTTOM_UP) {
-			return header_height + content_height - p_beat * scale -vscroll_value;
+			return header_height + content_height - p_beat * (scale / beats_per_bar) -vscroll_value;
 		}
-		return header_height + p_beat * scale - vscroll_value;
+		return header_height + p_beat * (scale / beats_per_bar) - vscroll_value;
 	}
 
 	double VTimelinePanel::_y_to_beat(float p_y) const {
@@ -705,9 +849,7 @@ namespace godot {
 				break;
 			}
 			case BEAT: {
-				double beat_duration = 60.0 / bpm;
-				double beat = current_time / beat_duration;
-				line_position = get_position_from_beat(beat);
+				line_position = _time_to_y(current_time);
 				break;
 			}
 			case TIME:
@@ -730,8 +872,8 @@ namespace godot {
 		float visible_end_y = get_size().y;
 
 		// 计算可见范围内的拍
-		double start_beat = _y_to_beat(visible_start_y);
-		double end_beat = _y_to_beat(visible_end_y);
+		double start_beat = _y_to_beat(visible_start_y) * beats_per_bar;
+		double end_beat = _y_to_beat(visible_end_y) * beats_per_bar;
 		int start_beat_i = Math::floor(Math::min(start_beat, end_beat));
 		int end_beat_i = Math::ceil(Math::max(start_beat, end_beat));
 
@@ -741,9 +883,9 @@ namespace godot {
 			if (y < visible_start_y || y > visible_end_y) continue;
 
 			// 判断是小节线还是拍线
-			bool is_bar_line = (beat % beats_per_bar) == 0;
-			Color line_color = is_bar_line ? bar_line_color : beat_line_color;
-			float line_w = is_bar_line ? bar_line_width : beat_line_width;
+			bool is_beat_line = (beat % beats_per_bar) == 0;
+			Color line_color = is_beat_line ? beat_line_color : bar_line_color;
+			float line_w = is_beat_line ? beat_line_width : bar_line_width;
 
 			draw_line(
 				Point2(start_pos, y),
@@ -859,10 +1001,9 @@ namespace godot {
 	float VTimelinePanel::_calculate_grid_height() const {
 		switch (counting_unit) {
 		case BEAT: {
-			float beat_duration = 60.0f / bpm;
-			double total_beats = duration / beat_duration;
-			if (total_beats < 1) total_beats = 1;
-			return total_beats * scale;
+			double total_rows = _row_total;
+			if (total_rows < 1) total_rows = 1;
+			return total_rows * (scale / beats_per_bar);
 		}
 		case FRAME: {
 			double total_frames = duration * fps;
@@ -1131,6 +1272,10 @@ namespace godot {
 
 	void VTimelinePanel::set_duration(const double p_duration) {
 		duration = p_duration;
+		_calculate_beat_total();
+		_calculate_row_total();
+		_build_time_to_beat_map();
+		_build_beat_to_time_map();
 		queue_redraw();
 		update_minimum_size();
 	}
@@ -1206,18 +1351,23 @@ namespace godot {
 		return show_subdivision;
 	}
 
-	void VTimelinePanel::set_bpm(const int p_bpm) {
-		bpm = p_bpm;
+	void VTimelinePanel::set_bpms(const Dictionary& p_bpms) {
+		bpms = p_bpms;
+		_calculate_beat_total();
+		_calculate_row_total();
+		_build_time_to_beat_map();
+		_build_beat_to_time_map();
 		queue_redraw();
 		update_minimum_size();
 	}
 
-	int VTimelinePanel::get_bpm() const {
-		return bpm;
+	Dictionary VTimelinePanel::get_bpms() const {
+		return bpms;
 	}
 
 	void VTimelinePanel::set_beat_per_bar(const int p_beats_per_bar) {
 		beats_per_bar = p_beats_per_bar;
+		_calculate_row_total();
 		queue_redraw();
 		update_minimum_size();
 	}
