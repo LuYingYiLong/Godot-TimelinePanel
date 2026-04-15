@@ -1,8 +1,9 @@
 #include "v_timeline_panel.h"
 
-#include "components/timeline_panel_playhead_component.h"
-#include "components/timeline_panel_time_ruler_component.h"
-#include "components/timeline_panel_track_component.h"
+#include "components/timeline_panel_indicator.h"
+#include "components/timeline_panel_marker.h"
+#include "components/timeline_panel_time_ruler.h"
+#include "components/timeline_panel_track.h"
 
 #include <godot_cpp/classes/font.hpp>
 #include <godot_cpp/classes/theme_db.hpp>
@@ -119,32 +120,36 @@ namespace godot {
 		ADD_GROUP("", "");
 
 		ADD_GROUP("Components", "component_");
-		ClassDB::bind_method(D_METHOD("set_playhead_component", "playhead_component"), &VTimelinePanel::set_playhead_component);
-		ClassDB::bind_method(D_METHOD("get_playhead_component"), &VTimelinePanel::get_playhead_component);
-		ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "component_playhead", PROPERTY_HINT_RESOURCE_TYPE, "TimelinePanelPlayheadComponent"), "set_playhead_component", "get_playhead_component");
+		ClassDB::bind_method(D_METHOD("set_playhead", "playhead"), &VTimelinePanel::set_playhead);
+		ClassDB::bind_method(D_METHOD("get_playhead"), &VTimelinePanel::get_playhead);
+		ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "component_playhead", PROPERTY_HINT_RESOURCE_TYPE, "TimelinePanelIndicator"), "set_playhead", "get_playhead");
+
+		ClassDB::bind_method(D_METHOD("set_markers", "markers"), &VTimelinePanel::set_markers);
+		ClassDB::bind_method(D_METHOD("get_markers"), &VTimelinePanel::get_markers);
+		ADD_PROPERTY(PropertyInfo(Variant::ARRAY, "component_markers", PROPERTY_HINT_ARRAY_TYPE, "TimelinePanelMarker"), "set_markers", "get_markers");
 
 		ADD_GROUP("Components", "component_");
-		ClassDB::bind_method(D_METHOD("set_time_ruler_component", "time_ruler_component"), &VTimelinePanel::set_time_ruler_component);
-		ClassDB::bind_method(D_METHOD("get_time_ruler_component"), &VTimelinePanel::get_time_ruler_component);
-		ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "component_time_ruler", PROPERTY_HINT_RESOURCE_TYPE, "TimelinePanelTimeRulerComponent"), "set_time_ruler_component", "get_time_ruler_component");
+		ClassDB::bind_method(D_METHOD("set_time_ruler", "time_ruler"), &VTimelinePanel::set_time_ruler);
+		ClassDB::bind_method(D_METHOD("get_time_ruler"), &VTimelinePanel::get_time_ruler);
+		ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "component_time_ruler", PROPERTY_HINT_RESOURCE_TYPE, "TimelinePanelTimeRuler"), "set_time_ruler", "get_time_ruler");
 
-		ClassDB::bind_method(D_METHOD("set_track_components", "track_components"), &VTimelinePanel::set_track_components);
-		ClassDB::bind_method(D_METHOD("get_track_components"), &VTimelinePanel::get_track_components);
-		ADD_PROPERTY(PropertyInfo(Variant::ARRAY, "component_track", PROPERTY_HINT_ARRAY_TYPE, "TimelinePanelTrackComponent", PROPERTY_USAGE_DEFAULT | PROPERTY_USAGE_EDITOR_INSTANTIATE_OBJECT), "set_track_components", "get_track_components");
+		ClassDB::bind_method(D_METHOD("set_tracks", "tracks"), &VTimelinePanel::set_tracks);
+		ClassDB::bind_method(D_METHOD("get_tracks"), &VTimelinePanel::get_tracks);
+		ADD_PROPERTY(PropertyInfo(Variant::ARRAY, "component_track", PROPERTY_HINT_ARRAY_TYPE, "TimelinePanelTrack", PROPERTY_USAGE_DEFAULT | PROPERTY_USAGE_EDITOR_INSTANTIATE_OBJECT), "set_tracks", "get_tracks");
 
 		ADD_GROUP("Scrollbar", "");
 		ClassDB::bind_method(D_METHOD("set_h_scroll", "value"), &VTimelinePanel::set_h_scroll);
 		ClassDB::bind_method(D_METHOD("get_h_scroll"), &VTimelinePanel::get_h_scroll);
 		ADD_PROPERTY(PropertyInfo(Variant::INT, "scroll_horizontal", PROPERTY_HINT_NONE, "suffix:px"), "set_h_scroll", "get_h_scroll");
-		
+
 		ClassDB::bind_method(D_METHOD("set_v_scroll", "value"), &VTimelinePanel::set_v_scroll);
 		ClassDB::bind_method(D_METHOD("get_v_scroll"), &VTimelinePanel::get_v_scroll);
 		ADD_PROPERTY(PropertyInfo(Variant::INT, "scroll_vertical", PROPERTY_HINT_NONE, "suffix:px"), "set_v_scroll", "get_v_scroll");
-		
+
 		ClassDB::bind_method(D_METHOD("set_horizontal_custom_step", "value"), &VTimelinePanel::set_horizontal_custom_step);
 		ClassDB::bind_method(D_METHOD("get_horizontal_custom_step"), &VTimelinePanel::get_horizontal_custom_step);
 		ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "scroll_horizontal_custom_step", PROPERTY_HINT_RANGE, "-1,4096,suffix:px"), "set_horizontal_custom_step", "get_horizontal_custom_step");
-		
+
 		ClassDB::bind_method(D_METHOD("set_vertical_custom_step", "value"), &VTimelinePanel::set_vertical_custom_step);
 		ClassDB::bind_method(D_METHOD("get_vertical_custom_step"), &VTimelinePanel::get_vertical_custom_step);
 		ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "scroll_vertical_custom_step", PROPERTY_HINT_RANGE, "-1,4096,suffix:px"), "set_vertical_custom_step", "get_vertical_custom_step");
@@ -201,72 +206,90 @@ namespace godot {
 
 			// 绘制分隔线
 			Vector2 start_pos;
-			if (time_ruler_component.is_valid()) {
-				float width = time_ruler_component->get_width();
+			if (time_ruler.is_valid()) {
+				float width = time_ruler->get_width();
 				draw_line(Point2(start_pos.x + width, header_height), Point2(start_pos.x + width, get_size().y), separator_color, separator_width);
 				start_pos.x += width;
 			}
-			for (int64_t i = 0; i < track_components.size(); i++) {
-				Ref<TimelinePanelTrackComponent> track_component = track_components[i];
-				if (track_component.is_null()) continue;
+			for (int64_t i = 0; i < tracks.size(); i++) {
+				Ref<TimelinePanelTrack> track = tracks[i];
+				if (track.is_null()) continue;
 
-				float width = track_component->get_width();
+				float width = track->get_width();
 				draw_line(Point2(start_pos.x + width, header_height), Point2(start_pos.x + width, get_size().y), separator_color, separator_width);
 				start_pos.x += width;
 			}
 
-			// 绘制播放头
-			if (playhead_component.is_valid()) {
+			// 绘制指示器
+			TypedArray<TimelinePanelIndicator> all_indicators;
+			for (int i = 0; i < markers.size(); i++) {
+				Ref<TimelinePanelIndicator> indicator = markers[i];
+				if (indicator.is_valid()) {
+					all_indicators.append(markers[i]);
+				}
+			}
+			if (playhead.is_valid()) {
+				all_indicators.append(playhead);
+			}
+
+			for (int i = 0; i < all_indicators.size(); i++) {
 				float current_width = 0.0f;
-				if (time_ruler_component.is_valid()) {
-					current_width += time_ruler_component->get_width();
+				if (time_ruler.is_valid()) {
+					current_width += time_ruler->get_width();
 				}
 
-				double current_position;
+				Ref<TimelinePanelIndicator> indicator = all_indicators[i];
+				double current_position = 0.0;
+				double time = current_time;
+				Ref<TimelinePanelMarker> marker = indicator;
+				if (marker.is_valid()) {
+					time = marker->get_time();
+				}
+
 				switch (counting_unit) {
 				case FRAME: {
-					int64_t frame = static_cast<int64_t>(current_time * fps);
+					int64_t frame = static_cast<int64_t>(time * fps);
 					current_position = get_position_from_frame(frame);
 					break;
 				}
 				case BEAT: {
-					current_position = _time_to_y(current_time);
+					current_position = _time_to_y(time);
 					break;
 				}
 				case TIME:
 				default:
-					current_position = get_position_from_time(current_time);
+					current_position = get_position_from_time(time);
 					break;
 				}
-				const PackedVector2Array points = playhead_component->_get_points(current_position, current_width);
-				const PackedColorArray colors = playhead_component->_get_colors(current_position);
-				const String text = playhead_component->_get_text(static_cast<int>(counting_unit), current_time, current_position);
-				const Ref<Font> font = playhead_component->_get_font(current_position);
-				const Vector2 font_pos = playhead_component->_get_font_pos(current_position);
-				const int64_t font_size = playhead_component->_get_font_size(current_position);
-				const Color font_color = playhead_component->_get_font_color(current_position);
-				const bool show_line = playhead_component->_can_show_line(current_position);
-				const float line_width = playhead_component->_get_line_width(current_position);
-				const Color line_color = playhead_component->_get_line_color(current_position);
-				_draw_playhead(points, colors, text, font, font_pos, font_size, font_color, show_line, line_width, line_color);
+				const PackedVector2Array points = indicator->_get_points(current_position, current_width);
+				const PackedColorArray colors = indicator->_get_colors(current_position);
+				const String text = indicator->_get_text(static_cast<int>(counting_unit), time, current_position);
+				const Ref<Font> font = indicator->_get_font(current_position);
+				const Vector2 font_pos = indicator->_get_font_pos(current_position);
+				const int64_t font_size = indicator->_get_font_size(current_position);
+				const Color font_color = indicator->_get_font_color(current_position);
+				const bool show_line = indicator->_can_show_line(current_position);
+				const float line_width = indicator->_get_line_width(current_position);
+				const Color line_color = indicator->_get_line_color(current_position);
+				_draw_indicator(time, points, colors, text, font, font_pos, font_size, font_color, show_line, line_width, line_color);
 			}
 
 			// 最后绘制 header
 			start_pos = Vector2(0, 0);
-			if (time_ruler_component.is_valid()) {
-				float width = time_ruler_component->get_width();
-				Ref<StyleBox> header_background = time_ruler_component->get_header_background();
-				Ref<Texture2D> header_icon = time_ruler_component->get_header_icon();
+			if (time_ruler.is_valid()) {
+				float width = time_ruler->get_width();
+				Ref<StyleBox> header_background = time_ruler->get_header_background();
+				Ref<Texture2D> header_icon = time_ruler->get_header_icon();
 				_draw_header(start_pos, width, header_background, header_icon);
 				start_pos.x += width;
 			}
-			for (int64_t i = 0; i < track_components.size(); i++) {
-				Ref<TimelinePanelTrackComponent> track_component = track_components[i];
-				if (track_component.is_null()) continue;
+			for (int64_t i = 0; i < tracks.size(); i++) {
+				Ref<TimelinePanelTrack> track = tracks[i];
+				if (track.is_null()) continue;
 
-				float width = track_component->get_width();
-				Ref<StyleBox> header_background = track_component->get_header_background();
-				Ref<Texture2D> header_icon = track_component->get_header_icon();
+				float width = track->get_width();
+				Ref<StyleBox> header_background = track->get_header_background();
+				Ref<Texture2D> header_icon = track->get_header_icon();
 				_draw_header(start_pos, width, header_background, header_icon);
 				start_pos.x += width;
 			}
@@ -352,7 +375,7 @@ namespace godot {
 		}
 	}
 
-	void VTimelinePanel::_draw_header(const Point2& pos, const float width, const Ref<StyleBox> header_bg, Ref<Texture2D> header_icon) {
+	void VTimelinePanel::_draw_header(const Point2& pos, const float width, Ref<StyleBox> header_bg, Ref<Texture2D> header_icon) {
 		if (header_bg.is_valid()) {
 			draw_style_box(header_bg, Rect2(pos, Size2(width, header_height)));
 		}
@@ -381,8 +404,8 @@ namespace godot {
 			Dictionary current_bpm = bpms.get(time, 120);
 			sorted_beats.append(current_bpm.get("beat", 0.0));
 		}
-		double current_sec = 0.0;
 
+		double current_sec = 0.0;
 		for (int64_t index = 0; index < sorted_beats.size(); ++index) {
 			double time = keys[index];
 			Dictionary current_bpm = bpms.get(time, 120);
@@ -397,7 +420,7 @@ namespace godot {
 
 			if (index == sorted_beats.size() - 1) {
 				to_beat = _beat_total;
-				Dictionary result = Dictionary();
+				Dictionary result;
 				result["from_sec"] = current_sec;
 				result["to_sec"] = duration;
 				result["from_beat"] = from_beat;
@@ -411,7 +434,7 @@ namespace godot {
 			to_beat = sorted_beats[index + 1];
 			double beats_in_seg = to_beat - from_beat;
 			double sec_in_seg = beats_in_seg * 60.0 / bpm;
-			Dictionary result = Dictionary();
+			Dictionary result;
 			result["from_sec"] = current_sec;
 			result["to_sec"] = current_sec + sec_in_seg;
 			result["from_beat"] = from_beat;
@@ -445,7 +468,7 @@ namespace godot {
 
 			// 最后一段
 			if (index == sorted_beats.size() - 1) {
-				Dictionary result = Dictionary();
+				Dictionary result;
 				result["from_sec"] = current_sec;
 				result["from_beat"] = from_beat;
 				result["to_beat"] = current_map_end_beat;
@@ -457,7 +480,7 @@ namespace godot {
 			double to_beat_in_seg = sorted_beats[index + 1];
 			double beats_in_seg = to_beat_in_seg - from_beat;
 			double sec_in_seg = beats_in_seg * 60.0 / bpm;
-			Dictionary result = Dictionary();
+			Dictionary result;
 			result["from_sec"] = current_sec;
 			result["from_beat"] = from_beat;
 			result["to_beat"] = to_beat_in_seg;
@@ -519,7 +542,7 @@ namespace godot {
 		if (counting_unit == BEAT) {
 			double row = _time_to_beat(p_time) * beats_per_bar;
 			if (bar_number_direction == BAR_NUMBER_BOTTOM_UP) {
-				return header_height + content_height - row * (scale / beats_per_bar) -vscroll_value;
+				return header_height + content_height - row * (scale / beats_per_bar) - vscroll_value;
 			}
 			return header_height + row * (scale / beats_per_bar) - vscroll_value;
 		}
@@ -535,7 +558,8 @@ namespace godot {
 		double time;
 		if (bar_number_direction == BAR_NUMBER_BOTTOM_UP) {
 			time = (header_height + content_height - p_y - vscroll_value) / scale;
-		} else {
+		}
+		else {
 			time = (p_y - header_height + vscroll_value) / scale;
 		}
 		if (time < 0) time = 0;
@@ -602,7 +626,7 @@ namespace godot {
 
 	float VTimelinePanel::_beat_to_y(double p_beat) const {
 		if (bar_number_direction == BAR_NUMBER_BOTTOM_UP) {
-			return header_height + content_height - p_beat * (scale / beats_per_bar) -vscroll_value;
+			return header_height + content_height - p_beat * (scale / beats_per_bar) - vscroll_value;
 		}
 		return header_height + p_beat * (scale / beats_per_bar) - vscroll_value;
 	}
@@ -611,7 +635,8 @@ namespace godot {
 		double beat;
 		if (bar_number_direction == BAR_NUMBER_BOTTOM_UP) {
 			beat = (header_height + content_height - p_y - vscroll_value) / (scale / beats_per_bar);
-		} else {
+		}
+		else {
 			beat = (p_y - header_height + vscroll_value) / (scale / beats_per_bar);
 		}
 		// 限制 beat 在有效范围内
@@ -632,7 +657,8 @@ namespace godot {
 		double frame;
 		if (bar_number_direction == BAR_NUMBER_BOTTOM_UP) {
 			frame = (header_height + content_height - p_y - vscroll_value) / scale;
-		} else {
+		}
+		else {
 			frame = (p_y - header_height + vscroll_value) / scale;
 		}
 		if (frame < 0) frame = 0;
@@ -706,14 +732,14 @@ namespace godot {
 	}
 
 	void VTimelinePanel::_draw_time_ruler_ticks(float p_header_width) {
-		if (time_ruler_component.is_null()) return;
+		if (time_ruler.is_null()) return;
 
-		const float ruler_width = time_ruler_component->get_width();
-		const float major_tick_height = time_ruler_component->get_major_tick_height();
-		const float major_tick_width = time_ruler_component->get_major_tick_width();
-		const float minor_tick_height = time_ruler_component->get_minjor_tick_height();
-		const float minor_tick_width = time_ruler_component->get_minjor_tick_width();
-		const Color tick_color = time_ruler_component->get_tick_color();
+		const float ruler_width = time_ruler->get_width();
+		const float major_tick_height = time_ruler->get_major_tick_height();
+		const float major_tick_width = time_ruler->get_major_tick_width();
+		const float minor_tick_height = time_ruler->get_minjor_tick_height();
+		const float minor_tick_width = time_ruler->get_minjor_tick_width();
+		const Color tick_color = time_ruler->get_tick_color();
 		const float visible_start_y = header_height;
 		const float visible_end_y = get_size().y;
 		const float margin = 8.0f;
@@ -750,7 +776,8 @@ namespace godot {
 					bool should_draw_number = true;
 					if (bar_number_direction == BAR_NUMBER_BOTTOM_UP) {
 						if (y > get_size().y - margin) should_draw_number = false;
-					} else {
+					}
+					else {
 						if (y < visible_start_y + margin) should_draw_number = false;
 					}
 
@@ -895,7 +922,8 @@ namespace godot {
 		}
 	}
 
-	void VTimelinePanel::_draw_playhead(
+	void VTimelinePanel::_draw_indicator(
+		const double time,
 		const PackedVector2Array& points,
 		const PackedColorArray& colors,
 		const String& text,
@@ -912,17 +940,17 @@ namespace godot {
 			double line_position;
 			switch (counting_unit) {
 			case FRAME: {
-				int64_t frame = static_cast<int64_t>(current_time * fps);
+				int64_t frame = static_cast<int64_t>(time * fps);
 				line_position = get_position_from_frame(frame);
 				break;
 			}
 			case BEAT: {
-				line_position = _time_to_y(current_time);
+				line_position = _time_to_y(time);
 				break;
 			}
 			case TIME:
 			default:
-				line_position = get_position_from_time(current_time);
+				line_position = get_position_from_time(time);
 				break;
 			}
 			draw_line(Point2(0.0f, line_position), Point2(header_width, line_position), line_color, line_width);
@@ -932,8 +960,8 @@ namespace godot {
 
 	void VTimelinePanel::_draw_grid_beat(float p_header_width) {
 		float start_pos = 0.0f;
-		if (time_ruler_component.is_valid()) {
-			start_pos = time_ruler_component->get_width();
+		if (time_ruler.is_valid()) {
+			start_pos = time_ruler->get_width();
 		}
 
 		float visible_start_y = header_height;
@@ -966,8 +994,8 @@ namespace godot {
 
 	void VTimelinePanel::_draw_grid_frame(float p_header_width) {
 		float start_pos = 0.0f;
-		if (time_ruler_component.is_valid()) {
-			start_pos = time_ruler_component->get_width();
+		if (time_ruler.is_valid()) {
+			start_pos = time_ruler->get_width();
 		}
 
 		float visible_start_y = header_height;
@@ -1007,8 +1035,8 @@ namespace godot {
 
 	void VTimelinePanel::_draw_grid_time(float p_header_width) {
 		float start_pos = 0.0f;
-		if (time_ruler_component.is_valid()) {
-			start_pos = time_ruler_component->get_width();
+		if (time_ruler.is_valid()) {
+			start_pos = time_ruler->get_width();
 		}
 
 		float visible_start_y = header_height;
@@ -1053,14 +1081,14 @@ namespace godot {
 	float VTimelinePanel::_calculate_header_width() const {
 		float width = 0.0f;
 
-		if (time_ruler_component.is_valid()) {
-			width += time_ruler_component->get_width();
+		if (time_ruler.is_valid()) {
+			width += time_ruler->get_width();
 		}
 
-		for (int64_t i = 0; i < track_components.size(); i++) {
-			Ref<TimelinePanelTrackComponent> track_component = track_components[i];
-			if (track_component.is_null()) continue;
-			width += track_component->get_width();
+		for (int64_t i = 0; i < tracks.size(); i++) {
+			Ref<TimelinePanelTrack> track = tracks[i];
+			if (track.is_null()) continue;
+			width += track->get_width();
 		}
 
 		return width;
@@ -1155,7 +1183,7 @@ namespace godot {
 				if (mb->get_button_index() == MouseButton::MOUSE_BUTTON_WHEEL_LEFT) {
 					// 默认情况下，水平方向优先。这是一个例外
 					if ((v_scroll_enabled && mb->is_shift_pressed()) || h_scroll_hidden) {
-						_scroll(vscroll , -vscroll->get_page() / 8 * mb->get_factor());
+						_scroll(vscroll, -vscroll->get_page() / 8 * mb->get_factor());
 						scroll_value_modified = true;
 					}
 					else if (h_scroll_enabled) {
@@ -1275,6 +1303,30 @@ namespace godot {
 			}
 			return;
 		}
+	}
+
+	String VTimelinePanel::_get_tooltip(const Vector2& p_at_position) const {
+		if (p_at_position.y > header_height) return String();
+
+		Vector2 start_pos;
+		if (time_ruler.is_valid()) {
+			float width = time_ruler->get_width();
+			Rect2 area = Rect2(Vector2(0.0, 0.0), Vector2(width, header_height));
+			if (area.has_point(p_at_position)) return time_ruler->get_tooltip_text();
+			start_pos.x += width;
+		}
+
+		for (int i = 0; i < tracks.size(); i++) {
+			Ref<TimelinePanelTrack> track = tracks[i];
+			if (track.is_null()) continue;
+
+			float width = track->get_width();
+			Rect2 area = Rect2(start_pos, Vector2(width, header_height));
+			if (area.has_point(p_at_position)) return track->get_tooltip_text();
+			start_pos.x += width;
+		}
+
+		return String();
 	}
 
 	double VTimelinePanel::get_time_from_position(const double p_position) const {
@@ -1489,45 +1541,59 @@ namespace godot {
 		return bar_number_direction;
 	}
 
-	void VTimelinePanel::set_playhead_component(Ref<TimelinePanelPlayheadComponent> p_playhead_component) {
-		playhead_component = p_playhead_component;
-		if (playhead_component.is_valid()) {
-			playhead_component->connect("changed", callable_mp(this, &VTimelinePanel::_on_resource_changed));
+	void VTimelinePanel::set_playhead(Ref<TimelinePanelIndicator> p_playhead) {
+		playhead = p_playhead;
+		if (playhead.is_valid()) {
+			playhead->connect("changed", callable_mp(this, &VTimelinePanel::_on_resource_changed));
 		}
 		queue_redraw();
 	}
 
-	Ref<TimelinePanelPlayheadComponent> VTimelinePanel::get_playhead_component() const {
-		return playhead_component;
+	Ref<TimelinePanelIndicator> VTimelinePanel::get_playhead() const {
+		return playhead;
 	}
 
-	void VTimelinePanel::set_time_ruler_component(Ref<TimelinePanelTimeRulerComponent> p_time_ruler_component) {
-		time_ruler_component = p_time_ruler_component;
-		if (time_ruler_component.is_valid()) {
-			time_ruler_component->connect("changed", callable_mp(this, &VTimelinePanel::_on_resource_changed));
+	void VTimelinePanel::set_markers(const TypedArray<TimelinePanelMarker>& p_markers) {
+		markers = p_markers;
+		for (int i = 0; i < markers.size(); i++) {
+			Ref<TimelinePanelMarker> marker = markers[i];
+			if (marker.is_valid() && !marker->is_connected("changed", callable_mp(this, &VTimelinePanel::_on_resource_changed))) {
+				marker->connect("changed", callable_mp(this, &VTimelinePanel::_on_resource_changed));
+			}
+		}
+	}
+
+	TypedArray<TimelinePanelMarker> VTimelinePanel::get_markers() const {
+		return markers;
+	}
+
+	void VTimelinePanel::set_time_ruler(Ref<TimelinePanelTimeRuler> p_time_ruler) {
+		time_ruler = p_time_ruler;
+		if (time_ruler.is_valid()) {
+			time_ruler->connect("changed", callable_mp(this, &VTimelinePanel::_on_resource_changed));
 		}
 		queue_redraw();
 		update_minimum_size();
 	}
 
-	Ref<TimelinePanelTimeRulerComponent> VTimelinePanel::get_time_ruler_component() const {
-		return time_ruler_component;
+	Ref<TimelinePanelTimeRuler> VTimelinePanel::get_time_ruler() const {
+		return time_ruler;
 	}
 
-	void VTimelinePanel::set_track_components(const TypedArray<TimelinePanelTrackComponent>& p_track_components) {
-		track_components = p_track_components;
-		for (int i = 0; i < track_components.size(); i++) {
-			Ref<TimelinePanelTrackComponent> track_component = track_components[i];
-			if (track_component.is_valid() && !track_component->is_connected("changed", callable_mp(this, &VTimelinePanel::_on_resource_changed))) {
-				track_component->connect("changed", callable_mp(this, &VTimelinePanel::_on_resource_changed));
+	void VTimelinePanel::set_tracks(const TypedArray<TimelinePanelTrack>& p_tracks) {
+		tracks = p_tracks;
+		for (int i = 0; i < tracks.size(); i++) {
+			Ref<TimelinePanelTrack> track = tracks[i];
+			if (track.is_valid() && !track->is_connected("changed", callable_mp(this, &VTimelinePanel::_on_resource_changed))) {
+				track->connect("changed", callable_mp(this, &VTimelinePanel::_on_resource_changed));
 			}
 		}
 		queue_redraw();
 		update_minimum_size();
 	}
 
-	TypedArray<TimelinePanelTrackComponent> VTimelinePanel::get_track_components() const {
-		return track_components;
+	TypedArray<TimelinePanelTrack> VTimelinePanel::get_tracks() const {
+		return tracks;
 	}
 
 	void VTimelinePanel::set_h_scroll(int p_pos) {

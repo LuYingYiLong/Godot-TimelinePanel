@@ -7,9 +7,10 @@
 #include <godot_cpp/classes/v_scroll_bar.hpp>
 
 namespace godot {
-	class TimelinePanelPlayheadComponent;
-	class TimelinePanelTimeRulerComponent;
-	class TimelinePanelTrackComponent;
+	class TimelinePanelIndicator;
+	class TimelinePanelMarker;
+	class TimelinePanelTimeRuler;
+	class TimelinePanelTrack;
 
 	class VTimelinePanel : public Control {
 		GDCLASS(VTimelinePanel, Control)
@@ -61,9 +62,10 @@ namespace godot {
 		float scale = 32.0f;
 		CountingUnit counting_unit = TIME;
 
-		Ref<TimelinePanelPlayheadComponent> playhead_component;
-		Ref<TimelinePanelTimeRulerComponent> time_ruler_component;
-		TypedArray<TimelinePanelTrackComponent> track_components;
+		Ref<TimelinePanelIndicator> playhead;
+		TypedArray<TimelinePanelMarker> markers;
+		Ref<TimelinePanelTimeRuler> time_ruler;
+		TypedArray<TimelinePanelTrack> tracks;
 
 		float hscroll_value = 0.0f;
 		float vscroll_value = 0.0f;
@@ -116,9 +118,10 @@ namespace godot {
 		void _scroll_to(ScrollBar* p_scroll, double p_pos);
 		void _cancel_drag();
 
-		void _draw_header(const Point2& pos, const float width, const Ref<StyleBox> header_bg, Ref<Texture2D> header_icon);
+		void _draw_header(const Point2& pos, const float width, Ref<StyleBox> header_bg, Ref<Texture2D> header_icon);
 		void _draw_time_ruler_ticks(float p_header_width);
-		void _draw_playhead(
+		void _draw_indicator(
+			const double time,
 			const PackedVector2Array& points,
 			const PackedColorArray& colors,
 			const String& text,
@@ -166,6 +169,7 @@ namespace godot {
 
 		virtual Vector2 _get_minimum_size() const override;
 		virtual void _gui_input(const Ref<InputEvent>& p_gui_input) override;
+		virtual String _get_tooltip(const Vector2& p_at_position) const override;
 
 		double get_time_from_position(const double p_position) const;
 		double get_frame_from_position(const double p_position) const;
@@ -231,14 +235,17 @@ namespace godot {
 		void set_bar_number_direction(BarNumberDirection p_direction);
 		BarNumberDirection get_bar_number_direction() const;
 
-		void set_playhead_component(Ref<TimelinePanelPlayheadComponent> p_playhead_component);
-		Ref<TimelinePanelPlayheadComponent> get_playhead_component() const;
+		void set_playhead(Ref<TimelinePanelIndicator> p_playhead);
+		Ref<TimelinePanelIndicator> get_playhead() const;
 
-		void set_time_ruler_component(Ref<TimelinePanelTimeRulerComponent> p_time_ruler_component);
-		Ref<TimelinePanelTimeRulerComponent> get_time_ruler_component() const;
+		void set_markers(const TypedArray<TimelinePanelMarker>& p_markers);
+		TypedArray<TimelinePanelMarker> get_markers() const;
 
-		void set_track_components(const TypedArray<TimelinePanelTrackComponent>& p_track_components);
-		TypedArray<TimelinePanelTrackComponent> get_track_components() const;
+		void set_time_ruler(Ref<TimelinePanelTimeRuler> p_time_ruler);
+		Ref<TimelinePanelTimeRuler> get_time_ruler() const;
+
+		void set_tracks(const TypedArray<TimelinePanelTrack>& p_tracks);
+		TypedArray<TimelinePanelTrack> get_tracks() const;
 
 		void set_h_scroll(int p_pos);
 		int get_h_scroll() const;

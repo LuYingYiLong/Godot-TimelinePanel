@@ -1,14 +1,14 @@
-#ifndef TIMELINE_PANEL_TIME_RULER_COMPONENT_H
-#define TIMELINE_PANEL_TIME_RULER_COMPONENT_H
+#ifndef TIMELINE_PANEL_TIME_RULER_H
+#define TIMELINE_PANEL_TIME_RULER_H
 
-#include "timeline_panel_base_component.h"
+#include "timeline_panel_base.h"
 #include <godot_cpp/classes/texture2d.hpp>
 #include <godot_cpp/classes/style_box.hpp>
 #include <godot_cpp/core/gdvirtual.gen.inc>
 
 namespace godot {
-	class TimelinePanelTimeRulerComponent : public TimelinePanelBaseComponent {
-		GDCLASS(TimelinePanelTimeRulerComponent, TimelinePanelBaseComponent)
+	class TimelinePanelTimeRuler : public TimelinePanelBase {
+		GDCLASS(TimelinePanelTimeRuler, TimelinePanelBase)
 
 	private:
 		float width = 64.0f;
@@ -24,6 +24,8 @@ namespace godot {
 		Color playhead_color = Color("#ffffff");
 		Color playhead_text_color = Color("#000000");
 		float playhead_line_width = 2.0f;
+
+		String tooltip_text;
 
 		void _on_resource_changed();
 
@@ -66,7 +68,10 @@ namespace godot {
 
 		void set_playhead_line_width(const float p_width);
 		float get_playhead_line_width() const;
+
+		void set_tooltip_text(const String& p_text);
+		String get_tooltip_text() const;
 	};
 }
 
-#endif // !TIMELINE_PANEL_TIME_RULER_COMPONENT_H
+#endif // !TIMELINE_PANEL_TIME_RULER_H

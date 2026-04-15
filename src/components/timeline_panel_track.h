@@ -1,14 +1,13 @@
-#ifndef TIMELINE_PANEL_TRACK_COMPONENT_H
-#define TIMELINE_PANEL_TRACK_COMPONENT_H
+#ifndef TIMELINE_PANEL_TRACK_H
+#define TIMELINE_PANEL_TRACK_H
 
-#include "timeline_panel_base_component.h"
-
+#include "timeline_panel_base.h"
 #include <godot_cpp/classes/texture2d.hpp>
 #include <godot_cpp/classes/style_box.hpp>
 
 namespace godot {
-	class TimelinePanelTrackComponent : public TimelinePanelBaseComponent {
-		GDCLASS(TimelinePanelTrackComponent, TimelinePanelBaseComponent)
+	class TimelinePanelTrack : public TimelinePanelBase {
+		GDCLASS(TimelinePanelTrack, TimelinePanelBase)
 
 	private:
 		float width = 32.0f;
@@ -36,4 +35,4 @@ namespace godot {
 	};
 }
 
-#endif // !TIMELINE_PANEL_TRACK_COMPONENT_H
+#endif // !TIMELINE_PANEL_TRACK_H
