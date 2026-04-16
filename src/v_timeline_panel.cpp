@@ -1,9 +1,10 @@
 #include "v_timeline_panel.h"
 
-#include "components/timeline_panel_indicator.h"
-#include "components/timeline_panel_marker.h"
-#include "components/timeline_panel_time_ruler.h"
-#include "components/timeline_panel_track.h"
+#include "components/timeline_indicator.h"
+#include "components/timeline_marker.h"
+#include "components/timeline_time_ruler.h"
+#include "components/timeline_track.h"
+#include "components/timeline_track_key.h"
 
 #include <godot_cpp/classes/font.hpp>
 #include <godot_cpp/classes/theme_db.hpp>
@@ -29,6 +30,13 @@ namespace godot {
 		BIND_ENUM_CONSTANT(SCROLL_MODE_SHOW_ALWAYS);
 		BIND_ENUM_CONSTANT(SCROLL_MODE_SHOW_NEVER);
 		BIND_ENUM_CONSTANT(SCROLL_MODE_RESERVE);
+
+		ClassDB::bind_method(D_METHOD("create_key", "track_index", "time", "length"), &VTimelinePanel::create_key, DEFVAL(0.0f));
+		ClassDB::bind_method(D_METHOD("remove_key", "track_index", "key_index"), &VTimelinePanel::remove_key);
+		ClassDB::bind_method(D_METHOD("clear_track_keys", "track_index"), &VTimelinePanel::clear_track_keys);
+		ClassDB::bind_method(D_METHOD("clear_all_keys"), &VTimelinePanel::clear_all_keys);
+		ClassDB::bind_method(D_METHOD("get_key_count"), &VTimelinePanel::get_key_count);
+		ClassDB::bind_method(D_METHOD("get_key", "track_index", "key_index"), &VTimelinePanel::get_key);
 
 		ClassDB::bind_method(D_METHOD("get_time_from_position", "position"), &VTimelinePanel::get_time_from_position);
 		ClassDB::bind_method(D_METHOD("get_frame_from_position", "position"), &VTimelinePanel::get_frame_from_position);
@@ -122,20 +130,20 @@ namespace godot {
 		ADD_GROUP("Components", "component_");
 		ClassDB::bind_method(D_METHOD("set_playhead", "playhead"), &VTimelinePanel::set_playhead);
 		ClassDB::bind_method(D_METHOD("get_playhead"), &VTimelinePanel::get_playhead);
-		ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "component_playhead", PROPERTY_HINT_RESOURCE_TYPE, "TimelinePanelIndicator"), "set_playhead", "get_playhead");
+		ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "component_playhead", PROPERTY_HINT_RESOURCE_TYPE, "TimelineIndicator"), "set_playhead", "get_playhead");
 
 		ClassDB::bind_method(D_METHOD("set_markers", "markers"), &VTimelinePanel::set_markers);
 		ClassDB::bind_method(D_METHOD("get_markers"), &VTimelinePanel::get_markers);
-		ADD_PROPERTY(PropertyInfo(Variant::ARRAY, "component_markers", PROPERTY_HINT_ARRAY_TYPE, "TimelinePanelMarker"), "set_markers", "get_markers");
+		ADD_PROPERTY(PropertyInfo(Variant::ARRAY, "component_markers", PROPERTY_HINT_ARRAY_TYPE, "TimelineMarker"), "set_markers", "get_markers");
 
 		ADD_GROUP("Components", "component_");
 		ClassDB::bind_method(D_METHOD("set_time_ruler", "time_ruler"), &VTimelinePanel::set_time_ruler);
 		ClassDB::bind_method(D_METHOD("get_time_ruler"), &VTimelinePanel::get_time_ruler);
-		ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "component_time_ruler", PROPERTY_HINT_RESOURCE_TYPE, "TimelinePanelTimeRuler"), "set_time_ruler", "get_time_ruler");
+		ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "component_time_ruler", PROPERTY_HINT_RESOURCE_TYPE, "TimelineTimeRuler"), "set_time_ruler", "get_time_ruler");
 
 		ClassDB::bind_method(D_METHOD("set_tracks", "tracks"), &VTimelinePanel::set_tracks);
 		ClassDB::bind_method(D_METHOD("get_tracks"), &VTimelinePanel::get_tracks);
-		ADD_PROPERTY(PropertyInfo(Variant::ARRAY, "component_track", PROPERTY_HINT_ARRAY_TYPE, "TimelinePanelTrack", PROPERTY_USAGE_DEFAULT | PROPERTY_USAGE_EDITOR_INSTANTIATE_OBJECT), "set_tracks", "get_tracks");
+		ADD_PROPERTY(PropertyInfo(Variant::ARRAY, "component_track", PROPERTY_HINT_ARRAY_TYPE, "TimelineTrack", PROPERTY_USAGE_DEFAULT | PROPERTY_USAGE_EDITOR_INSTANTIATE_OBJECT), "set_tracks", "get_tracks");
 
 		ADD_GROUP("Scrollbar", "");
 		ClassDB::bind_method(D_METHOD("set_h_scroll", "value"), &VTimelinePanel::set_h_scroll);
@@ -165,6 +173,30 @@ namespace godot {
 		ClassDB::bind_method(D_METHOD("set_deadzone", "deadzone"), &VTimelinePanel::set_deadzone);
 		ClassDB::bind_method(D_METHOD("get_deadzone"), &VTimelinePanel::get_deadzone);
 		ADD_PROPERTY(PropertyInfo(Variant::INT, "scroll_deadzone"), "set_deadzone", "get_deadzone");
+		ADD_GROUP("", "");
+
+		ADD_GROUP("Style overrides", "");
+		ADD_SUBGROUP("Constants", "");
+		ClassDB::bind_method(D_METHOD("set_icon_max_width", "width"), &VTimelinePanel::set_icon_max_width);
+		ClassDB::bind_method(D_METHOD("get_icon_max_width"), &VTimelinePanel::get_icon_max_width);
+		ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "icon_max_width"), "set_icon_max_width", "get_icon_max_width");
+
+		ClassDB::bind_method(D_METHOD("set_instant_key_scale", "scale"), &VTimelinePanel::set_instant_key_scale);
+		ClassDB::bind_method(D_METHOD("get_instant_key_scale"), &VTimelinePanel::get_instant_key_scale);
+		ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "instant_key_scale"), "set_instant_key_scale", "get_instant_key_scale");
+
+		ADD_SUBGROUP("Styles", "");
+		ClassDB::bind_method(D_METHOD("set_instant_key_normal_style", "style"), &VTimelinePanel::set_instant_key_normal_style);
+		ClassDB::bind_method(D_METHOD("get_instant_key_normal_style"), &VTimelinePanel::get_instant_key_normal_style);
+		ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "instant_key_normal", PROPERTY_HINT_RESOURCE_TYPE, "StyleBox"), "set_instant_key_normal_style", "get_instant_key_normal_style");
+
+		ClassDB::bind_method(D_METHOD("set_clip_key_normal_style", "style"), &VTimelinePanel::set_clip_key_normal_style);
+		ClassDB::bind_method(D_METHOD("get_clip_key_normal_style"), &VTimelinePanel::get_clip_key_normal_style);
+		ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "clip_key_normal", PROPERTY_HINT_RESOURCE_TYPE, "StyleBox"), "set_clip_key_normal_style", "get_clip_key_normal_style");
+
+		ClassDB::bind_method(D_METHOD("set_selection_rect_style", "style"), &VTimelinePanel::set_selection_rect_style);
+		ClassDB::bind_method(D_METHOD("get_selection_rect_style"), &VTimelinePanel::get_selection_rect_style);
+		ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "selection_rect", PROPERTY_HINT_RESOURCE_TYPE, "StyleBox"), "set_selection_rect_style", "get_selection_rect_style");
 
 		ADD_SIGNAL(MethodInfo("scroll_started"));
 		ADD_SIGNAL(MethodInfo("scroll_ended"));
@@ -174,6 +206,20 @@ namespace godot {
 		switch (p_what) {
 		case NOTIFICATION_RESIZED: {
 			_update_scroll_bar();
+		} break;
+
+		case NOTIFICATION_INTERNAL_PROCESS: {
+			if (select_pending) {
+				select_timer += get_process_delta_time();
+				if (select_timer >= long_press_time && !beyond_deadzone) {
+					select_pending = false;
+					selecting = true;
+					// 退出滚动状态，防止后续 motion 被当成滚动
+					drag_touching = false;
+					beyond_deadzone = false;
+					queue_redraw();
+				}
+			}
 		} break;
 
 		case NOTIFICATION_DRAW: {
@@ -212,7 +258,7 @@ namespace godot {
 				start_pos.x += width;
 			}
 			for (int64_t i = 0; i < tracks.size(); i++) {
-				Ref<TimelinePanelTrack> track = tracks[i];
+				Ref<TimelineTrack> track = tracks[i];
 				if (track.is_null()) continue;
 
 				float width = track->get_width();
@@ -220,10 +266,91 @@ namespace godot {
 				start_pos.x += width;
 			}
 
+			// 绘制轨道键
+			for (size_t i = 0; i < _track_cache.size(); i++) {
+				const auto& ct = _track_cache[i];
+				if (ct.width <= 0.0f) continue;
+
+				for (TimelineTrackKey* key : ct.keys) {
+					if (!key || key->is_disabled()) continue;
+
+					float y = 0.0f;
+					float y_end = 0.0f;
+					switch (counting_unit) {
+					case FRAME: {
+						y = _frame_to_y(static_cast<int64_t>(key->get_time()));
+						y_end = _frame_to_y(static_cast<int64_t>(key->get_time() + key->get_length()));
+					} break;
+					case BEAT:
+					case TIME:
+					default: {
+						y = _time_to_y(key->get_time());
+						y_end = _time_to_y(key->get_time() + key->get_length());
+					} break;
+					}
+
+					if (key->is_instant()) {
+						float key_scale = 0.5f;
+						if (instant_key_scale != 0.5f) {
+							key_scale = instant_key_scale;
+						}
+						else {
+							key_scale = key->get_instant_key_scale();
+						}
+						float pos_x = ct.x_offset - hscroll_value;
+						float pos_y = y - ct.width * 0.5f;
+						float width = ct.width * key_scale;
+						Rect2 key_rect(pos_x + width * 0.5f, pos_y + width * 0.5f, width, width);
+						Ref<StyleBox> style;
+						if (get_instant_key_normal_style().is_valid()) {
+							style = get_instant_key_normal_style();
+						}
+						else {
+							style = key->get_instant_key_style();
+						}
+						if (style.is_valid()) {
+							draw_style_box(style, key_rect);
+						}
+						else {
+							float cx = ct.x_offset + ct.width * 0.5f - hscroll_value;
+							float size = 5.0f;
+							PackedVector2Array points;
+							points.push_back(Vector2(cx, y - size));
+							points.push_back(Vector2(cx + size, y));
+							points.push_back(Vector2(cx, y + size));
+							points.push_back(Vector2(cx - size, y));
+							draw_colored_polygon(points, key->get_color());
+						}
+					}
+					else {
+						// 防止矩形尺寸出现负数
+						Rect2 bar_rect;
+						if (y_end < y) {
+							bar_rect = Rect2(ct.x_offset - hscroll_value, y_end, ct.width, y - y_end);
+						} else {
+							bar_rect = Rect2(ct.x_offset - hscroll_value, y, ct.width, y_end - y);
+						}
+						Ref<StyleBox> style;
+						if (get_clip_key_normal_style().is_valid()) {
+							style = get_clip_key_normal_style();
+						}
+						else {
+							style = key->get_clip_style();
+						}
+						if (style.is_valid()) {
+							draw_style_box(style, bar_rect);
+						}
+						else {
+							draw_rect(bar_rect, key->get_color());
+						}
+					}
+				}
+			}
+
 			// 绘制指示器
-			TypedArray<TimelinePanelIndicator> all_indicators;
+			TypedArray<TimelineIndicator> all_indicators;
 			for (int i = 0; i < markers.size(); i++) {
-				Ref<TimelinePanelIndicator> indicator = markers[i];
+				Ref<TimelineIndicator> indicator = markers[i];
 				if (indicator.is_valid()) {
 					all_indicators.append(markers[i]);
 				}
@@ -238,10 +365,10 @@ namespace godot {
 					current_width += time_ruler->get_width();
 				}
 
-				Ref<TimelinePanelIndicator> indicator = all_indicators[i];
+				Ref<TimelineIndicator> indicator = all_indicators[i];
 				double current_position = 0.0;
 				double time = current_time;
-				Ref<TimelinePanelMarker> marker = indicator;
+				Ref<TimelineMarker> marker = indicator;
 				if (marker.is_valid()) {
 					time = marker->get_time();
 				}
@@ -274,6 +401,23 @@ namespace godot {
 				_draw_indicator(time, points, colors, text, font, font_pos, font_size, font_color, show_line, line_width, line_color);
 			}
 
+			if (selecting) {
+				Rect2 sel_rect;
+				sel_rect.position.x = Math::min(select_start.x, select_end.x);
+				sel_rect.position.y = Math::min(select_start.y, select_end.y);
+				sel_rect.size.x = Math::abs(select_end.x - select_start.x);
+				sel_rect.size.y = Math::abs(select_end.y - select_start.y);
+
+				Ref<StyleBox> style = get_selection_rect_style();
+				if (style.is_valid()) {
+					draw_style_box(style, sel_rect);
+				}
+				else {
+					draw_rect(sel_rect, Color(1.0f, 1.0f, 1.0f, 0.3f));
+					draw_rect(sel_rect, Color(1.0f, 1.0f, 1.0f), false);
+				}
+			}
+
 			// 最后绘制 header
 			start_pos = Vector2(0, 0);
 			if (time_ruler.is_valid()) {
@@ -284,7 +428,7 @@ namespace godot {
 				start_pos.x += width;
 			}
 			for (int64_t i = 0; i < tracks.size(); i++) {
-				Ref<TimelinePanelTrack> track = tracks[i];
+				Ref<TimelineTrack> track = tracks[i];
 				if (track.is_null()) continue;
 
 				float width = track->get_width();
@@ -345,6 +489,10 @@ namespace godot {
 		vscroll->hide();
 		vscroll->connect("value_changed", callable_mp(this, &VTimelinePanel::_v_scroll_changed));
 		add_child(vscroll, false, INTERNAL_MODE_FRONT);
+	}
+
+	VTimelinePanel::~VTimelinePanel() {
+		clear_all_keys();
 	}
 
 	void VTimelinePanel::_scroll(ScrollBar* p_scroll, double p_amount) {
@@ -670,6 +818,32 @@ namespace godot {
 	void VTimelinePanel::_on_resource_changed() {
 		queue_redraw();
 		update_minimum_size();
+	}
+
+	void VTimelinePanel::_rebuild_track_cache() {
+		_track_cache.clear();
+		_track_cache.reserve(tracks.size());
+
+		float current_x = 0.0f;
+		if (time_ruler.is_valid()) {
+			current_x += time_ruler->get_width();
+		}
+
+		for (int i = 0; i < tracks.size(); i++) {
+			Ref<TimelineTrack> track = tracks[i];
+			if (track.is_null()) {
+				// 保持索引对齐，放入空槽
+				CachedTrack ct;
+				_track_cache.push_back(std::move(ct));
+				continue;
+			}
+
+			CachedTrack ct;
+			ct.x_offset = current_x;
+			ct.width = track->get_width();
+			_track_cache.push_back(std::move(ct));
+			current_x += track->get_width();
+		}
 	}
 
 	void VTimelinePanel::_update_scroll_bar() {
@@ -1086,7 +1260,7 @@ namespace godot {
 		}
 
 		for (int64_t i = 0; i < tracks.size(); i++) {
-			Ref<TimelinePanelTrack> track = tracks[i];
+			Ref<TimelineTrack> track = tracks[i];
 			if (track.is_null()) continue;
 			width += track->get_width();
 		}
@@ -1210,6 +1384,65 @@ namespace godot {
 			}
 
 			bool is_touchscreen_available = DisplayServer::get_singleton()->is_touchscreen_available();
+			if (mb->get_button_index() == MouseButton::MOUSE_BUTTON_LEFT) {
+				if (!is_touchscreen_available) {
+					// 只有桌面端左键才直接触发框选
+					if (mb->is_pressed() && mb->get_position().y > header_height) {
+						selecting = true;
+						select_start = mb->get_position();
+						select_end = select_start;
+						queue_redraw();
+					}
+					else {
+						if (selecting) {
+							selecting = false;
+							queue_redraw();
+							// TODO: 在这里收集最终选中的键
+						}
+					}
+					accept_event();
+					return;
+				}
+
+				// 触摸屏逻辑
+				if (mb->is_pressed() && mb->get_position().y > header_height) {
+					if (drag_touching) {
+						_cancel_drag();
+					}
+
+					select_pending = true;
+					select_timer = 0.0f;
+					select_start = mb->get_position();
+					select_end = select_start;
+
+					drag_speed = Vector2();
+					drag_accum = Vector2();
+					last_drag_accum = Vector2();
+					drag_from = Vector2(prev_h_scroll, prev_v_scroll);
+					drag_touching = true;
+					drag_touching_deaccel = false;
+					beyond_deadzone = false;
+					time_since_motion = 0;
+					set_process_internal(true);
+					time_since_motion = 0;
+				}
+				else {
+					if (selecting) {
+						selecting = false;
+						queue_redraw();
+						// TODO: 收集选中键
+					}
+					else if (select_pending) {
+						select_pending = false;
+						if (drag_touching) {
+							_cancel_drag();
+						}
+					}
+				}
+				accept_event();
+				return;
+			}
+
 			if (!is_touchscreen_available) {
 				return;
 			}
@@ -1223,6 +1456,13 @@ namespace godot {
 					_cancel_drag();
 				}
 
+				// 先不决定是滚动还是框选
+				select_pending = true;
+				select_timer = 0.0f;
+				select_start = mb->get_position();
+				select_end = select_start;
+
+				// 同时预备好滚动所需的初始值
 				drag_speed = Vector2();
 				drag_accum = Vector2();
 				last_drag_accum = Vector2();
@@ -1233,7 +1473,6 @@ namespace godot {
 				time_since_motion = 0;
 				set_process_internal(true);
 				time_since_motion = 0;
-
 			}
 			else {
 				if (drag_touching) {
@@ -1251,6 +1490,24 @@ namespace godot {
 		Ref<InputEventMouseMotion> mm = p_gui_input;
 
 		if (mm.is_valid()) {
+			if (selecting) {
+				select_end = mm->get_position();
+				queue_redraw();
+				accept_event();
+				return;
+			}
+
+			if (select_pending) {
+				// 如果还没触发长按，但已经超出死区则判定为滚动，取消框选 pending
+				if (beyond_deadzone) {
+					select_pending = false;
+				}
+				else {
+					select_end = mm->get_position();
+					queue_redraw();
+				}
+			}
+
 			if (drag_touching && !drag_touching_deaccel) {
 				Vector2 motion = mm->get_relative();
 				drag_accum -= motion;
@@ -1317,7 +1574,7 @@ namespace godot {
 		}
 
 		for (int i = 0; i < tracks.size(); i++) {
-			Ref<TimelinePanelTrack> track = tracks[i];
+			Ref<TimelineTrack> track = tracks[i];
 			if (track.is_null()) continue;
 
 			float width = track->get_width();
@@ -1327,6 +1584,124 @@ namespace godot {
 		}
 
 		return String();
+	}
+
+	TimelineTrackKey* VTimelinePanel::create_key(int p_track_index, double p_time, double p_length) {
+		ERR_FAIL_INDEX_V(p_track_index, static_cast<int>(_track_cache.size()), nullptr);
+
+		TimelineTrackKey* key = memnew(TimelineTrackKey);
+		key->set_time(p_time);
+		key->set_length(p_length);
+		key->connect("changed", callable_mp(this, &VTimelinePanel::_on_resource_changed));
+
+		// 有序插入
+		auto& ct = _track_cache[p_track_index];
+		auto& keys = ct.keys;
+		auto it = std::lower_bound(keys.begin(), keys.end(), p_time,
+			[](TimelineTrackKey* k, double time) { return k->get_time() < time; });
+		keys.insert(it, key);
+
+		if (p_length > ct.max_key_length) {
+			ct.max_key_length = p_length;
+		}
+
+		queue_redraw();
+		return key;
+	}
+
+	void VTimelinePanel::remove_key(int p_track_index, int p_key_index) {
+		ERR_FAIL_INDEX(p_track_index, static_cast<int>(_track_cache.size()));
+		auto& ct = _track_cache[p_track_index];
+		auto& keys = ct.keys;
+		ERR_FAIL_INDEX(p_key_index, static_cast<int>(keys.size()));
+
+		if (keys[p_key_index]) {
+			if (keys[p_key_index]->get_length() >= ct.max_key_length) {
+				ct.max_key_length = 0.0;
+			}
+			memdelete(keys[p_key_index]);
+		}
+		keys.erase(keys.begin() + p_key_index);
+
+		if (ct.max_key_length == 0.0 && !keys.empty()) {
+			for (TimelineTrackKey* k : keys) {
+				if (k && k->get_length() > ct.max_key_length) {
+					ct.max_key_length = k->get_length();
+				}
+			}
+		}
+		queue_redraw();
+	}
+
+	void VTimelinePanel::clear_track_keys(int p_track_index) {
+		ERR_FAIL_INDEX(p_track_index, static_cast<int>(_track_cache.size()));
+		auto& keys = _track_cache[p_track_index].keys;
+		for (TimelineTrackKey* key : keys) {
+			if (key) {
+				memdelete(key);
+			}
+		}
+		keys.clear();
+		_track_cache[p_track_index].max_key_length = 0.0;
+		queue_redraw();
+	}
+
+	void VTimelinePanel::clear_all_keys() {
+		for (auto& ct : _track_cache) {
+			for (TimelineTrackKey* key : ct.keys) {
+				if (key) {
+					memdelete(key);
+				}
+			}
+			ct.keys.clear();
+			ct.max_key_length = 0.0;
+		}
+		queue_redraw();
+	}
+
+	int VTimelinePanel::get_key_count(int p_track_index) const {
+		ERR_FAIL_INDEX_V(p_track_index, static_cast<int>(_track_cache.size()), 0);
+		return static_cast<int>(_track_cache[p_track_index].keys.size());
+	}
+
+	TimelineTrackKey* VTimelinePanel::get_key(int p_track_index, int p_key_index) const {
+		ERR_FAIL_INDEX_V(p_track_index, static_cast<int>(_track_cache.size()), nullptr);
+		const auto& keys = _track_cache[p_track_index].keys;
+		ERR_FAIL_INDEX_V(p_key_index, static_cast<int>(keys.size()), nullptr);
+		return keys[p_key_index];
+	}
+
+	TypedArray<TimelineTrackKey> VTimelinePanel::find_keys(int p_track_index, double p_start_time, double p_end_time) const {
+		ERR_FAIL_INDEX_V(p_track_index, static_cast<int>(_track_cache.size()), TypedArray<TimelineTrackKey>());
+		const auto& ct = _track_cache[p_track_index];
+		const auto& keys = ct.keys;
+		TypedArray<TimelineTrackKey> result;
+
+		if (p_start_time > p_end_time || keys.empty()) {
+			return result;
+		}
+
+		// 往前回溯 max_key_length，防止漏掉长片段
+		double search_start = p_start_time - ct.max_key_length;
+		auto it = std::lower_bound(keys.begin(), keys.end(), search_start,
+			[](TimelineTrackKey* k, double time) { return k->get_time() < time; });
+
+		for (; it != keys.end(); ++it) {
+			TimelineTrackKey* key = *it;
+			if (!key || key->is_disabled()) continue;
+
+			double key_start = key->get_time();
+			if (key_start > p_end_time) {
+				break;
+			}
+
+			double key_end = key_start + key->get_length();
+			if (key_end >= p_start_time) {
+				result.append(key);
+			}
+		}
+
+		return result;
 	}
 
 	double VTimelinePanel::get_time_from_position(const double p_position) const {
@@ -1541,7 +1916,7 @@ namespace godot {
 		return bar_number_direction;
 	}
 
-	void VTimelinePanel::set_playhead(Ref<TimelinePanelIndicator> p_playhead) {
+	void VTimelinePanel::set_playhead(Ref<TimelineIndicator> p_playhead) {
 		playhead = p_playhead;
 		if (playhead.is_valid()) {
 			playhead->connect("changed", callable_mp(this, &VTimelinePanel::_on_resource_changed));
@@ -1549,25 +1924,25 @@ namespace godot {
 		queue_redraw();
 	}
 
-	Ref<TimelinePanelIndicator> VTimelinePanel::get_playhead() const {
+	Ref<TimelineIndicator> VTimelinePanel::get_playhead() const {
 		return playhead;
 	}
 
-	void VTimelinePanel::set_markers(const TypedArray<TimelinePanelMarker>& p_markers) {
+	void VTimelinePanel::set_markers(const TypedArray<TimelineMarker>& p_markers) {
 		markers = p_markers;
 		for (int i = 0; i < markers.size(); i++) {
-			Ref<TimelinePanelMarker> marker = markers[i];
+			Ref<TimelineMarker> marker = markers[i];
 			if (marker.is_valid() && !marker->is_connected("changed", callable_mp(this, &VTimelinePanel::_on_resource_changed))) {
 				marker->connect("changed", callable_mp(this, &VTimelinePanel::_on_resource_changed));
 			}
 		}
 	}
 
-	TypedArray<TimelinePanelMarker> VTimelinePanel::get_markers() const {
+	TypedArray<TimelineMarker> VTimelinePanel::get_markers() const {
 		return markers;
 	}
 
-	void VTimelinePanel::set_time_ruler(Ref<TimelinePanelTimeRuler> p_time_ruler) {
+	void VTimelinePanel::set_time_ruler(Ref<TimelineTimeRuler> p_time_ruler) {
 		time_ruler = p_time_ruler;
 		if (time_ruler.is_valid()) {
 			time_ruler->connect("changed", callable_mp(this, &VTimelinePanel::_on_resource_changed));
@@ -1576,14 +1951,16 @@ namespace godot {
 		update_minimum_size();
 	}
 
-	Ref<TimelinePanelTimeRuler> VTimelinePanel::get_time_ruler() const {
+	Ref<TimelineTimeRuler> VTimelinePanel::get_time_ruler() const {
 		return time_ruler;
 	}
 
-	void VTimelinePanel::set_tracks(const TypedArray<TimelinePanelTrack>& p_tracks) {
+	void VTimelinePanel::set_tracks(const TypedArray<TimelineTrack>& p_tracks) {
+		clear_all_keys();
 		tracks = p_tracks;
+		_rebuild_track_cache();
 		for (int i = 0; i < tracks.size(); i++) {
-			Ref<TimelinePanelTrack> track = tracks[i];
+			Ref<TimelineTrack> track = tracks[i];
 			if (track.is_valid() && !track->is_connected("changed", callable_mp(this, &VTimelinePanel::_on_resource_changed))) {
 				track->connect("changed", callable_mp(this, &VTimelinePanel::_on_resource_changed));
 			}
@@ -1592,7 +1969,7 @@ namespace godot {
 		update_minimum_size();
 	}
 
-	TypedArray<TimelinePanelTrack> VTimelinePanel::get_tracks() const {
+	TypedArray<TimelineTrack> VTimelinePanel::get_tracks() const {
 		return tracks;
 	}
 
@@ -1660,5 +2037,50 @@ namespace godot {
 
 	int VTimelinePanel::get_deadzone() const {
 		return deadzone;
+	}
+
+	void VTimelinePanel::set_icon_max_width(const float p_width) {
+		icon_max_width = p_width;
+		queue_redraw();
+	}
+
+	float VTimelinePanel::get_icon_max_width() const {
+		return icon_max_width;
+	}
+
+	void VTimelinePanel::set_instant_key_scale(const float p_scale) {
+		instant_key_scale = p_scale;
+		queue_redraw();
+	}
+
+	float VTimelinePanel::get_instant_key_scale() const {
+		return instant_key_scale;
+	}
+
+	void VTimelinePanel::set_instant_key_normal_style(Ref<StyleBox> p_style) {
+		instant_key_normal_style = p_style;
+		queue_redraw();
+	}
+
+	Ref<StyleBox> VTimelinePanel::get_instant_key_normal_style() const {
+		return instant_key_normal_style;
+	}
+
+	void VTimelinePanel::set_clip_key_normal_style(Ref<StyleBox> p_style) {
+		clip_key_normal_style = p_style;
+		queue_redraw();
+	}
+
+	Ref<StyleBox> VTimelinePanel::get_clip_key_normal_style() const {
+		return clip_key_normal_style;
+	}
+
+	void VTimelinePanel::set_selection_rect_style(Ref<StyleBox> p_style) {
+		selection_rect_style = p_style;
+		queue_redraw();
+	}
+
+	Ref<StyleBox> VTimelinePanel::get_selection_rect_style() const {
+		return selection_rect_style;
 	}
 }

@@ -23,19 +23,22 @@
     <ClInclude Include="src\v_timeline_panel.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="src\components\timeline_panel_base.h">
+    <ClInclude Include="src\components\timeline_base.h">
       <Filter>Header Files\components</Filter>
     </ClInclude>
-    <ClInclude Include="src\components\timeline_panel_track.h">
+    <ClInclude Include="src\components\timeline_track.h">
       <Filter>Header Files\components</Filter>
     </ClInclude>
-    <ClInclude Include="src\components\timeline_panel_time_ruler.h">
+    <ClInclude Include="src\components\timeline_time_ruler.h">
       <Filter>Header Files\components</Filter>
     </ClInclude>
-    <ClInclude Include="src\components\timeline_panel_indicator.h">
+    <ClInclude Include="src\components\timeline_indicator.h">
       <Filter>Header Files\components</Filter>
     </ClInclude>
-    <ClInclude Include="src\components\timeline_panel_marker.h">
+    <ClInclude Include="src\components\timeline_marker.h">
+      <Filter>Header Files\components</Filter>
+    </ClInclude>
+    <ClInclude Include="src\components\timeline_track_key.h">
       <Filter>Header Files\components</Filter>
     </ClInclude>
   </ItemGroup>
@@ -46,19 +49,22 @@
     <ClCompile Include="src\v_timeline_panel.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="src\components\timeline_panel_base.cpp">
+    <ClCompile Include="src\components\timeline_base.cpp">
       <Filter>Source Files\components</Filter>
     </ClCompile>
-    <ClCompile Include="src\components\timeline_panel_track.cpp">
+    <ClCompile Include="src\components\timeline_track.cpp">
       <Filter>Source Files\components</Filter>
     </ClCompile>
-    <ClCompile Include="src\components\timeline_panel_time_ruler.cpp">
+    <ClCompile Include="src\components\timeline_time_ruler.cpp">
       <Filter>Source Files\components</Filter>
     </ClCompile>
-    <ClCompile Include="src\components\timeline_panel_indicator.cpp">
+    <ClCompile Include="src\components\timeline_indicator.cpp">
       <Filter>Source Files\components</Filter>
     </ClCompile>
-    <ClCompile Include="src\components\timeline_panel_marker.cpp">
+    <ClCompile Include="src\components\timeline_marker.cpp">
+      <Filter>Source Files\components</Filter>
+    </ClCompile>
+    <ClCompile Include="src\components\timeline_track_key.cpp">
       <Filter>Source Files\components</Filter>
     </ClCompile>
   </ItemGroup>

@@ -1,11 +1,12 @@
 #include "register_types.h"
 
 #include "v_timeline_panel.h"
-#include "components/timeline_panel_base.h"
-#include "components/timeline_panel_indicator.h"
-#include "components/timeline_panel_marker.h"
-#include "components/timeline_panel_time_ruler.h"
-#include "components/timeline_panel_track.h"
+#include "components/timeline_base.h"
+#include "components/timeline_indicator.h"
+#include "components/timeline_marker.h"
+#include "components/timeline_time_ruler.h"
+#include "components/timeline_track.h"
+#include "components/timeline_track_key.h"
 
 #include <gdextension_interface.h>
 #include <godot_cpp/core/defs.hpp>
@@ -22,11 +23,12 @@ void initialize_timeline_panel_module(ModuleInitializationLevel p_level) {
 		return;
 	}
 
-	GDREGISTER_VIRTUAL_CLASS(TimelinePanelBase);
-	GDREGISTER_CLASS(TimelinePanelIndicator);
-	GDREGISTER_CLASS(TimelinePanelMarker);
-	GDREGISTER_CLASS(TimelinePanelTimeRuler);
-	GDREGISTER_CLASS(TimelinePanelTrack);
+	GDREGISTER_VIRTUAL_CLASS(TimelineBase);
+	GDREGISTER_CLASS(TimelineIndicator);
+	GDREGISTER_CLASS(TimelineMarker);
+	GDREGISTER_CLASS(TimelineTimeRuler);
+	GDREGISTER_CLASS(TimelineTrack);
+	GDREGISTER_CLASS(TimelineTrackKey);
 
 	GDREGISTER_CLASS(VTimelinePanel);
 }

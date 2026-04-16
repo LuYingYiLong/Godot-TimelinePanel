@@ -1,11 +1,11 @@
-#ifndef TIMELINE_PANEL_MARKER_H
-#define TIMELINE_PANEL_MARKER_H
+#ifndef TIMELINE_MARKER_H
+#define TIMELINE_MARKER_H
 
-#include "timeline_panel_indicator.h"
+#include "timeline_indicator.h"
 
 namespace godot {
-	class TimelinePanelMarker : public TimelinePanelIndicator {
-		GDCLASS(TimelinePanelMarker, TimelinePanelIndicator)
+	class TimelineMarker : public TimelineIndicator {
+		GDCLASS(TimelineMarker, TimelineIndicator)
 
 	private:
 		String name;
@@ -29,4 +29,4 @@ namespace godot {
 	};
 }
 
-#endif // !TIMELINE_PANEL_MARKER_H
+#endif // !TIMELINE_MARKER_H

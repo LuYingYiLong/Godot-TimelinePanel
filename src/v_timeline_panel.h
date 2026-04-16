@@ -5,12 +5,14 @@
 #include <godot_cpp/classes/input_event.hpp>
 #include <godot_cpp/classes/h_scroll_bar.hpp>
 #include <godot_cpp/classes/v_scroll_bar.hpp>
+#include <vector>
 
 namespace godot {
-	class TimelinePanelIndicator;
-	class TimelinePanelMarker;
-	class TimelinePanelTimeRuler;
-	class TimelinePanelTrack;
+	class TimelineIndicator;
+	class TimelineMarker;
+	class TimelineTimeRuler;
+	class TimelineTrack;
+	class TimelineTrackKey;
 
 	class VTimelinePanel : public Control {
 		GDCLASS(VTimelinePanel, Control)
@@ -62,10 +64,10 @@ namespace godot {
 		float scale = 32.0f;
 		CountingUnit counting_unit = TIME;
 
-		Ref<TimelinePanelIndicator> playhead;
-		TypedArray<TimelinePanelMarker> markers;
-		Ref<TimelinePanelTimeRuler> time_ruler;
-		TypedArray<TimelinePanelTrack> tracks;
+		Ref<TimelineIndicator> playhead;
+		TypedArray<TimelineMarker> markers;
+		Ref<TimelineTimeRuler> time_ruler;
+		TypedArray<TimelineTrack> tracks;
 
 		float hscroll_value = 0.0f;
 		float vscroll_value = 0.0f;
@@ -92,7 +94,7 @@ namespace godot {
 		Dictionary bpms;
 		int beats_per_bar = 4;
 		Color beat_line_color = Color("#ff7384");
-		float beat_line_width = 1.0f;
+		float beat_line_width = -1.0f;
 		Color bar_line_color = Color("#5f8fc9");
 		float bar_line_width = -1.0f;
 		BarNumberDirection bar_number_direction = BAR_NUMBER_TOP_DOWN;
@@ -113,6 +115,13 @@ namespace godot {
 		bool drag_touching_deaccel = false;
 		bool beyond_deadzone = false;
 		bool scroll_on_drag_hover = false;
+
+		bool selecting = false;
+		bool select_pending = false;
+		float long_press_time = 0.4f;
+		float select_timer = 0.0f;
+		Vector2 select_start;
+		Vector2 select_end;
 
 		void _scroll(ScrollBar* p_scroll, double p_amount);
 		void _scroll_to(ScrollBar* p_scroll, double p_pos);
@@ -158,6 +167,20 @@ namespace godot {
 		int64_t _y_to_frame(float p_y) const;
 
 		void _on_resource_changed();
+		struct CachedTrack {
+			float x_offset = 0.0f;
+			float width = 0.0f;
+			std::vector<TimelineTrackKey*> keys;
+			double max_key_length = 0.0;
+		};
+		std::vector<CachedTrack> _track_cache;
+		void _rebuild_track_cache();
+
+		float icon_max_width = 0.0f;
+		float instant_key_scale = 0.5f;
+		Ref<StyleBox> instant_key_normal_style;
+		Ref<StyleBox> clip_key_normal_style;
+		Ref<StyleBox> selection_rect_style;
 
 	protected:
 		static void _bind_methods();
@@ -166,10 +189,20 @@ namespace godot {
 
 	public:
 		VTimelinePanel();
+		~VTimelinePanel();
 
 		virtual Vector2 _get_minimum_size() const override;
 		virtual void _gui_input(const Ref<InputEvent>& p_gui_input) override;
 		virtual String _get_tooltip(const Vector2& p_at_position) const override;
+
+		// 轨道键管理
+		TimelineTrackKey* create_key(int p_track_index, double p_time, double p_length = 0.0);
+		void remove_key(int p_track_index, int p_key_index);
+		void clear_track_keys(int p_track_index);
+		void clear_all_keys();
+		int get_key_count(int p_track_index) const;
+		TimelineTrackKey* get_key(int p_track_index, int p_key_index) const;
+		TypedArray<TimelineTrackKey> find_keys(int p_track_index, double p_start_time, double p_end_time) const;
 
 		double get_time_from_position(const double p_position) const;
 		double get_frame_from_position(const double p_position) const;
@@ -235,17 +268,17 @@ namespace godot {
 		void set_bar_number_direction(BarNumberDirection p_direction);
 		BarNumberDirection get_bar_number_direction() const;
 
-		void set_playhead(Ref<TimelinePanelIndicator> p_playhead);
-		Ref<TimelinePanelIndicator> get_playhead() const;
+		void set_playhead(Ref<TimelineIndicator> p_playhead);
+		Ref<TimelineIndicator> get_playhead() const;
 
-		void set_markers(const TypedArray<TimelinePanelMarker>& p_markers);
-		TypedArray<TimelinePanelMarker> get_markers() const;
+		void set_markers(const TypedArray<TimelineMarker>& p_markers);
+		TypedArray<TimelineMarker> get_markers() const;
 
-		void set_time_ruler(Ref<TimelinePanelTimeRuler> p_time_ruler);
-		Ref<TimelinePanelTimeRuler> get_time_ruler() const;
+		void set_time_ruler(Ref<TimelineTimeRuler> p_time_ruler);
+		Ref<TimelineTimeRuler> get_time_ruler() const;
 
-		void set_tracks(const TypedArray<TimelinePanelTrack>& p_tracks);
-		TypedArray<TimelinePanelTrack> get_tracks() const;
+		void set_tracks(const TypedArray<TimelineTrack>& p_tracks);
+		TypedArray<TimelineTrack> get_tracks() const;
 
 		void set_h_scroll(int p_pos);
 		int get_h_scroll() const;
@@ -267,6 +300,21 @@ namespace godot {
 
 		void set_deadzone(int p_deadzone);
 		int get_deadzone() const;
+
+		void set_icon_max_width(const float p_width);
+		float get_icon_max_width() const;
+
+		void set_instant_key_scale(const float p_scale);
+		float get_instant_key_scale() const;
+
+		void set_instant_key_normal_style(Ref<StyleBox> p_style);
+		Ref<StyleBox> get_instant_key_normal_style() const;
+
+		void set_clip_key_normal_style(Ref<StyleBox> p_style);
+		Ref<StyleBox> get_clip_key_normal_style() const;
+
+		void set_selection_rect_style(Ref<StyleBox> p_style);
+		Ref<StyleBox> get_selection_rect_style() const;
 	};
 }
 

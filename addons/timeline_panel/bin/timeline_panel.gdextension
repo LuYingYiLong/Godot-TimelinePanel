@@ -7,3 +7,4 @@ reloadable = true
 [libraries]
 
 windows.debug.x86_64 = "timeline_panel.windows.template_debug.x86_64.dll"
+android.debug.arm64 = "libtimeline_panel.android.template_debug.arm64.so"

@@ -1,19 +1,19 @@
-#ifndef TIMELINE_PANEL_INDICATOR_H
-#define TIMELINE_PANEL_INDICATOR_H
+#ifndef TIMELINE_INDICATOR_H
+#define TIMELINE_INDICATOR_H
 
-#include "timeline_panel_base.h"
+#include "timeline_base.h"
 
 #include <godot_cpp/core/binder_common.hpp>
 #include <godot_cpp/core/gdvirtual.gen.inc>
 #include <godot_cpp/classes/font.hpp>
 
 namespace godot {
-	class TimelinePanelIndicator : public TimelinePanelBase {
-		GDCLASS(TimelinePanelIndicator, TimelinePanelBase)
+	class TimelineIndicator : public TimelineBase {
+		GDCLASS(TimelineIndicator, TimelineBase)
 
 	private:
 		Color color = Color(1, 1, 1);
-		int64_t font_size = 14;
+		int64_t font_size = 12;
 		float font_offset = 0.0f;
 		Color font_color;
 		bool show_line = true;
@@ -65,4 +65,4 @@ namespace godot {
 	};
 }
 
-#endif // !TIMELINE_PANEL_INDICATOR_H
+#endif // !TIMELINE_INDICATOR_H

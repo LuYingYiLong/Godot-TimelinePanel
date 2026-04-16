@@ -1,14 +1,14 @@
-#ifndef TIMELINE_PANEL_TIME_RULER_H
-#define TIMELINE_PANEL_TIME_RULER_H
+#ifndef TIMELINE_TIME_RULER_H
+#define TIMELINE_TIME_RULER_H
 
-#include "timeline_panel_base.h"
+#include "timeline_base.h"
 #include <godot_cpp/classes/texture2d.hpp>
 #include <godot_cpp/classes/style_box.hpp>
 #include <godot_cpp/core/gdvirtual.gen.inc>
 
 namespace godot {
-	class TimelinePanelTimeRuler : public TimelinePanelBase {
-		GDCLASS(TimelinePanelTimeRuler, TimelinePanelBase)
+	class TimelineTimeRuler : public TimelineBase {
+		GDCLASS(TimelineTimeRuler, TimelineBase)
 
 	private:
 		float width = 64.0f;
@@ -74,4 +74,4 @@ namespace godot {
 	};
 }
 
-#endif // !TIMELINE_PANEL_TIME_RULER_H
+#endif // !TIMELINE_TIME_RULER_H
