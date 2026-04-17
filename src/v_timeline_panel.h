@@ -122,6 +122,7 @@ namespace godot {
 		float select_timer = 0.0f;
 		Vector2 select_start;
 		Vector2 select_end;
+		void _collect_selected_keys();
 
 		void _scroll(ScrollBar* p_scroll, double p_amount);
 		void _scroll_to(ScrollBar* p_scroll, double p_pos);
@@ -176,11 +177,21 @@ namespace godot {
 		std::vector<CachedTrack> _track_cache;
 		void _rebuild_track_cache();
 
-		float icon_max_width = 0.0f;
-		float instant_key_scale = 0.5f;
-		Ref<StyleBox> instant_key_normal_style;
-		Ref<StyleBox> clip_key_normal_style;
-		Ref<StyleBox> selection_rect_style;
+		struct StyleCache {
+			Ref<StyleBox> instant_key_normal;
+			Ref<StyleBox> instant_key_normal_fallback;
+			Ref<StyleBox> instant_key_selected;
+			Ref<StyleBox> instant_key_selected_fallback;
+			Ref<StyleBox> clip_key_normal;
+			Ref<StyleBox> clip_key_normal_fallback;
+			Ref<StyleBox> clip_key_selected;
+			Ref<StyleBox> clip_key_selected_fallback;
+			Ref<StyleBox> selection_rect;
+			Ref<StyleBox> selection_rect_fallback;
+
+			float icon_max_width = 0.0f;
+			float instant_key_scale = 0.4f;
+		} style_cache;
 
 	protected:
 		static void _bind_methods();
@@ -310,8 +321,14 @@ namespace godot {
 		void set_instant_key_normal_style(Ref<StyleBox> p_style);
 		Ref<StyleBox> get_instant_key_normal_style() const;
 
+		void set_instant_key_selected_style(Ref<StyleBox> p_style);
+		Ref<StyleBox> get_instant_key_selected_style() const;
+
 		void set_clip_key_normal_style(Ref<StyleBox> p_style);
 		Ref<StyleBox> get_clip_key_normal_style() const;
+
+		void set_clip_key_selected_style(Ref<StyleBox> p_style);
+		Ref<StyleBox> get_clip_key_selected_style() const;
 
 		void set_selection_rect_style(Ref<StyleBox> p_style);
 		Ref<StyleBox> get_selection_rect_style() const;

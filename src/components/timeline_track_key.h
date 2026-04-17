@@ -12,13 +12,14 @@ namespace godot {
 	private:
 		double time = 0.0;
 		double length = 0.0;
-		Color color = Color(1.0f, 1.0f, 1.0f);
 		String text;
 		Ref<Texture2D> icon;
-		Ref<StyleBox> instant_key_style;
-		Ref<StyleBox> clip_style;
+		Ref<StyleBox> instant_key_normal_style;
+		Ref<StyleBox> instant_key_selected_style;
+		Ref<StyleBox> clip_key_normal_style;
+		Ref<StyleBox> clip_key_selected_style;
 		float icon_max_width = 0.0f;
-		float instant_key_scale = 0.5f;
+		float instant_key_scale = 0.4f;
 		bool selected = false;
 		bool disabled = false;
 		Variant meta;
@@ -28,9 +29,11 @@ namespace godot {
 
 	public:
 		void set_selected(bool p_selected);
+		void set_selected_no_signal(bool p_selected);
 		bool is_selected() const;
 
 		void set_disabled(bool p_disabled);
+		void set_disabled_no_signal(bool p_disabled);
 		bool is_disabled() const;
 
 		void set_time(double p_time);
@@ -38,9 +41,6 @@ namespace godot {
 
 		void set_length(double p_length);
 		double get_length() const;
-
-		void set_color(const Color& p_color);
-		Color get_color() const;
 
 		void set_text(const String& p_text);
 		String get_text() const;
@@ -54,11 +54,17 @@ namespace godot {
 		void set_instant_key_scale(const float p_scale);
 		float get_instant_key_scale() const;
 
-		void set_instant_key_style(const Ref<StyleBox>& p_style);
-		Ref<StyleBox> get_instant_key_style() const;
+		void set_instant_key_normal_style(const Ref<StyleBox>& p_style);
+		Ref<StyleBox> get_instant_key_normal_style() const;
 
-		void set_clip_style(const Ref<StyleBox>& p_style);
-		Ref<StyleBox> get_clip_style() const;
+		void set_instant_key_selected_style(Ref<StyleBox> p_style);
+		Ref<StyleBox> get_instant_key_selected_style() const;
+
+		void set_clip_key_normal_style(const Ref<StyleBox>& p_style);
+		Ref<StyleBox> get_clip_key_normal_style() const;
+
+		void set_clip_key_selected_style(Ref<StyleBox> p_style);
+		Ref<StyleBox> get_clip_key_selected_style() const;
 
 		void set_metadata(const Variant& p_meta);
 		Variant get_metadata() const;

@@ -7,10 +7,13 @@
 #include "components/timeline_track_key.h"
 
 #include <godot_cpp/classes/font.hpp>
-#include <godot_cpp/classes/theme_db.hpp>
 #include <godot_cpp/classes/input_event_mouse_button.hpp>
 #include <godot_cpp/classes/input_event_mouse_motion.hpp>
 #include <godot_cpp/classes/input_event_pan_gesture.hpp>
+#include <godot_cpp/classes/style_box_flat.hpp>
+#include <godot_cpp/classes/theme_db.hpp>
+
+#include <algorithm>
 
 namespace godot {
 	void VTimelinePanel::_bind_methods() {
@@ -190,6 +193,10 @@ namespace godot {
 		ClassDB::bind_method(D_METHOD("get_instant_key_normal_style"), &VTimelinePanel::get_instant_key_normal_style);
 		ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "instant_key_normal", PROPERTY_HINT_RESOURCE_TYPE, "StyleBox"), "set_instant_key_normal_style", "get_instant_key_normal_style");
 
+		ClassDB::bind_method(D_METHOD("set_instant_key_selected_style", "style"), &VTimelinePanel::set_instant_key_selected_style);
+		ClassDB::bind_method(D_METHOD("get_instant_key_selected_style"), &VTimelinePanel::get_instant_key_selected_style);
+		ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "instant_key_selected", PROPERTY_HINT_RESOURCE_TYPE, "StyleBox"), "set_instant_key_selected_style", "get_instant_key_selected_style");
+
 		ClassDB::bind_method(D_METHOD("set_clip_key_normal_style", "style"), &VTimelinePanel::set_clip_key_normal_style);
 		ClassDB::bind_method(D_METHOD("get_clip_key_normal_style"), &VTimelinePanel::get_clip_key_normal_style);
 		ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "clip_key_normal", PROPERTY_HINT_RESOURCE_TYPE, "StyleBox"), "set_clip_key_normal_style", "get_clip_key_normal_style");
@@ -197,6 +204,10 @@ namespace godot {
 		ClassDB::bind_method(D_METHOD("set_selection_rect_style", "style"), &VTimelinePanel::set_selection_rect_style);
 		ClassDB::bind_method(D_METHOD("get_selection_rect_style"), &VTimelinePanel::get_selection_rect_style);
 		ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "selection_rect", PROPERTY_HINT_RESOURCE_TYPE, "StyleBox"), "set_selection_rect_style", "get_selection_rect_style");
+
+		ClassDB::bind_method(D_METHOD("set_clip_key_selected_style", "style"), &VTimelinePanel::set_clip_key_selected_style);
+		ClassDB::bind_method(D_METHOD("get_clip_key_selected_style"), &VTimelinePanel::get_clip_key_selected_style);
+		ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "clip_key_selected", PROPERTY_HINT_RESOURCE_TYPE, "StyleBox"), "set_clip_key_selected_style", "get_clip_key_selected_style");
 
 		ADD_SIGNAL(MethodInfo("scroll_started"));
 		ADD_SIGNAL(MethodInfo("scroll_ended"));
@@ -277,22 +288,22 @@ namespace godot {
 					float y = 0.0f;
 					float y_end = 0.0f;
 					switch (counting_unit) {
-					case FRAME: {
-						y = _frame_to_y(static_cast<int64_t>(key->get_time()));
-						y_end = _frame_to_y(static_cast<int64_t>(key->get_time() + key->get_length()));
-					} break;
-					case BEAT:
-					case TIME:
-					default: {
-						y = _time_to_y(key->get_time());
-						y_end = _time_to_y(key->get_time() + key->get_length());
-					} break;
+						case FRAME: {
+							y = _frame_to_y(static_cast<int64_t>(key->get_time()));
+							y_end = _frame_to_y(static_cast<int64_t>(key->get_time() + key->get_length()));
+						} break;
+						case BEAT:
+						case TIME:
+						default: {
+							y = _time_to_y(key->get_time());
+							y_end = _time_to_y(key->get_time() + key->get_length());
+						} break;
 					}
 
 					if (key->is_instant()) {
-						float key_scale = 0.5f;
-						if (instant_key_scale != 0.5f) {
-							key_scale = instant_key_scale;
+						float key_scale = 0.4f;
+						if (style_cache.instant_key_scale != 0.4f) {
+							key_scale = style_cache.instant_key_scale;
 						}
 						else {
 							key_scale = key->get_instant_key_scale();
@@ -302,24 +313,31 @@ namespace godot {
 						float width = ct.width * key_scale;
 						Rect2 key_rect(pos_x + width * 0.5f, pos_y + width * 0.5f, width, width);
 						Ref<StyleBox> style;
-						if (get_instant_key_normal_style().is_valid()) {
-							style = get_instant_key_normal_style();
+						if (key->get_instant_key_normal_style().is_valid()) {
+							style = key->get_instant_key_normal_style();
+						}
+						else if (style_cache.instant_key_normal.is_valid()) {
+							style = style_cache.instant_key_normal;
 						}
 						else {
-							style = key->get_instant_key_style();
+							style = style_cache.instant_key_normal_fallback;
 						}
 						if (style.is_valid()) {
 							draw_style_box(style, key_rect);
 						}
-						else {
-							float cx = ct.x_offset + ct.width * 0.5f - hscroll_value;
-							float size = 5.0f;
-							PackedVector2Array points;
-							points.push_back(Vector2(cx, y - size));
-							points.push_back(Vector2(cx + size, y));
-							points.push_back(Vector2(cx, y + size));
-							points.push_back(Vector2(cx - size, y));
-							draw_colored_polygon(points, key->get_color());
+						if (key->is_selected()) {
+							if (key->get_instant_key_selected_style().is_valid()) {
+								style = key->get_instant_key_selected_style();
+							}
+							else if (style_cache.instant_key_selected.is_valid()) {
+								style = style_cache.instant_key_selected;
+							}
+							else {
+								style = style_cache.instant_key_selected_fallback;
+							}
+							if (style.is_valid()) {
+								draw_style_box(style, key_rect);
+							}
 						}
 					}
 					else {
@@ -331,22 +349,35 @@ namespace godot {
 							bar_rect = Rect2(ct.x_offset - hscroll_value, y, ct.width, y_end - y);
 						}
 						Ref<StyleBox> style;
-						if (get_clip_key_normal_style().is_valid()) {
-							style = get_clip_key_normal_style();
+						if (key->get_clip_key_normal_style().is_valid()) {
+							style = key->get_clip_key_normal_style();
+						}
+						else if (style_cache.clip_key_normal.is_valid()) {
+							style = style_cache.clip_key_normal;
 						}
 						else {
-							style = key->get_clip_style();
+							style = style_cache.clip_key_normal_fallback;
 						}
 						if (style.is_valid()) {
 							draw_style_box(style, bar_rect);
 						}
-						else {
-							draw_rect(bar_rect, key->get_color());
+						if (key->is_selected()) {
+							if (key->get_clip_key_selected_style().is_valid()) {
+								style = key->get_clip_key_selected_style();
+							}
+							else if (style_cache.clip_key_selected.is_valid()) {
+								style = style_cache.clip_key_selected;
+							}
+							else {
+								style = style_cache.clip_key_selected_fallback;
+							}
+							if (style.is_valid()) {
+								draw_style_box(style, bar_rect);
+							}
 						}
 					}
 				}
 			}
-
 			// 绘制指示器
 			TypedArray<TimelineIndicator> all_indicators;
 			for (int i = 0; i < markers.size(); i++) {
@@ -488,11 +519,117 @@ namespace godot {
 		vscroll->set_anchor_and_offset(SIDE_BOTTOM, ANCHOR_END, 0);
 		vscroll->hide();
 		vscroll->connect("value_changed", callable_mp(this, &VTimelinePanel::_v_scroll_changed));
+
+		Ref<StyleBoxFlat> instant_key_normal;
+		instant_key_normal.instantiate();
+		instant_key_normal->set_bg_color(Color(1.0f, 1.0f, 1.0f));
+		instant_key_normal->set_corner_detail(1);
+		instant_key_normal->set_corner_radius_all(512);
+		style_cache.instant_key_normal_fallback = instant_key_normal;
+
+		Ref<StyleBoxFlat> instant_key_selected;
+		instant_key_selected.instantiate();
+		instant_key_selected->set_draw_center(false);
+		instant_key_selected->set_border_width_all(4);
+		instant_key_selected->set_border_color(Color(1.0f, 1.0f, 1.0f, 0.3f));
+		instant_key_selected->set_expand_margin_all(4);
+		instant_key_selected->set_corner_detail(1);
+		instant_key_selected->set_corner_radius_all(512);
+		style_cache.instant_key_selected_fallback = instant_key_selected;
+
+		Ref<StyleBoxFlat> clip_key_normal;
+		clip_key_normal.instantiate();
+		clip_key_normal->set_bg_color(Color(1.0f, 1.0f, 1.0f));
+		style_cache.clip_key_normal_fallback = clip_key_normal;
+
+		Ref<StyleBoxFlat> clip_key_selected;
+		clip_key_selected.instantiate();
+		clip_key_selected->set_draw_center(false);
+		clip_key_selected->set_border_width_all(4);
+		clip_key_selected->set_border_color(Color(1.0f, 1.0f, 1.0f, 0.3f));
+		clip_key_selected->set_expand_margin_all(4);
+		style_cache.clip_key_selected_fallback = clip_key_selected;
+
 		add_child(vscroll, false, INTERNAL_MODE_FRONT);
 	}
 
 	VTimelinePanel::~VTimelinePanel() {
 		clear_all_keys();
+	}
+
+	void VTimelinePanel::_collect_selected_keys() {
+		// 先清空所有已选状态
+		for (auto& ct : _track_cache) {
+			for (TimelineTrackKey* key : ct.keys) {
+				if (key) {
+					key->set_selected_no_signal(false);
+				}
+			}
+		}
+
+		// 构造选择矩形
+		Rect2 sel_rect;
+		sel_rect.position.x = Math::min(select_start.x, select_end.x);
+		sel_rect.position.y = Math::min(select_start.y, select_end.y);
+		sel_rect.size.x = Math::abs(select_end.x - select_start.x);
+		sel_rect.size.y = Math::abs(select_end.y - select_start.y);
+
+		// 接近点击时，扩大为 4x4 像素点选区域
+		if (sel_rect.size.x < 2.0f && sel_rect.size.y < 2.0f) {
+			sel_rect = Rect2(select_start - Vector2(2, 2), Vector2(4, 4));
+		}
+
+		// 遍历所有键，判断是否与选择矩形相交
+		for (size_t i = 0; i < _track_cache.size(); i++) {
+			const auto& ct = _track_cache[i];
+			if (ct.width <= 0.0f) continue;
+
+			for (TimelineTrackKey* key : ct.keys) {
+				if (!key || key->is_disabled()) continue;
+
+				float y = 0.0f;
+				float y_end = 0.0f;
+				switch (counting_unit) {
+					case FRAME: {
+						y = _frame_to_y(static_cast<int64_t>(key->get_time()));
+						y_end = _frame_to_y(static_cast<int64_t>(key->get_time() + key->get_length()));
+					} break;
+					case BEAT:
+					case TIME:
+					default: {
+						y = _time_to_y(key->get_time());
+						y_end = _time_to_y(key->get_time() + key->get_length());
+					} break;
+				}
+
+				Rect2 key_rect;
+				if (key->is_instant()) {
+					float key_scale = 0.4f;
+					if (style_cache.instant_key_scale != 0.4f) {
+						key_scale = style_cache.instant_key_scale;
+					}
+					else {
+						key_scale = key->get_instant_key_scale();
+					}
+					float pos_x = ct.x_offset - hscroll_value;
+					float pos_y = y - ct.width * 0.5f;
+					float width = ct.width * key_scale;
+					key_rect = Rect2(pos_x + width * 0.5f, pos_y + width * 0.5f, width, width);
+				}
+				else {
+					if (y_end < y) {
+						key_rect = Rect2(ct.x_offset - hscroll_value, y_end, ct.width, y - y_end);
+					}
+					else {
+						key_rect = Rect2(ct.x_offset - hscroll_value, y, ct.width, y_end - y);
+					}
+				}
+
+				if (sel_rect.intersects(key_rect)) {
+					key->set_selected_no_signal(true);
+				}
+			}
+		}
 	}
 
 	void VTimelinePanel::_scroll(ScrollBar* p_scroll, double p_amount) {
@@ -1396,8 +1533,8 @@ namespace godot {
 					else {
 						if (selecting) {
 							selecting = false;
+							_collect_selected_keys();
 							queue_redraw();
-							// TODO: 在这里收集最终选中的键
 						}
 					}
 					accept_event();
@@ -1429,8 +1566,8 @@ namespace godot {
 				else {
 					if (selecting) {
 						selecting = false;
+						_collect_selected_keys();
 						queue_redraw();
-						// TODO: 收集选中键
 					}
 					else if (select_pending) {
 						select_pending = false;
@@ -2040,47 +2177,65 @@ namespace godot {
 	}
 
 	void VTimelinePanel::set_icon_max_width(const float p_width) {
-		icon_max_width = p_width;
+		style_cache.icon_max_width = p_width;
 		queue_redraw();
 	}
 
 	float VTimelinePanel::get_icon_max_width() const {
-		return icon_max_width;
+		return style_cache.icon_max_width;
 	}
 
 	void VTimelinePanel::set_instant_key_scale(const float p_scale) {
-		instant_key_scale = p_scale;
+		style_cache.instant_key_scale = p_scale;
 		queue_redraw();
 	}
 
 	float VTimelinePanel::get_instant_key_scale() const {
-		return instant_key_scale;
+		return style_cache.instant_key_scale;
 	}
 
 	void VTimelinePanel::set_instant_key_normal_style(Ref<StyleBox> p_style) {
-		instant_key_normal_style = p_style;
+		style_cache.instant_key_normal = p_style;
 		queue_redraw();
 	}
 
 	Ref<StyleBox> VTimelinePanel::get_instant_key_normal_style() const {
-		return instant_key_normal_style;
+		return style_cache.instant_key_normal;
+	}
+
+	void VTimelinePanel::set_instant_key_selected_style(Ref<StyleBox> p_style) {
+		style_cache.instant_key_selected = p_style;
+		queue_redraw();
+	}
+
+	Ref<StyleBox> VTimelinePanel::get_instant_key_selected_style() const {
+		return style_cache.instant_key_selected;
 	}
 
 	void VTimelinePanel::set_clip_key_normal_style(Ref<StyleBox> p_style) {
-		clip_key_normal_style = p_style;
+		style_cache.clip_key_normal = p_style;
 		queue_redraw();
 	}
 
 	Ref<StyleBox> VTimelinePanel::get_clip_key_normal_style() const {
-		return clip_key_normal_style;
+		return style_cache.clip_key_normal;
+	}
+
+	void VTimelinePanel::set_clip_key_selected_style(Ref<StyleBox> p_style) {
+		style_cache.clip_key_selected = p_style;
+		queue_redraw();
+	}
+
+	Ref<StyleBox> VTimelinePanel::get_clip_key_selected_style() const {
+		return style_cache.clip_key_selected;
 	}
 
 	void VTimelinePanel::set_selection_rect_style(Ref<StyleBox> p_style) {
-		selection_rect_style = p_style;
+		style_cache.selection_rect = p_style;
 		queue_redraw();
 	}
 
 	Ref<StyleBox> VTimelinePanel::get_selection_rect_style() const {
-		return selection_rect_style;
+		return style_cache.selection_rect;
 	}
 }
