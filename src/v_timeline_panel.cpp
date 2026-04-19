@@ -6,14 +6,13 @@
 #include "components/timeline_track.h"
 #include "components/timeline_track_key.h"
 
+#include <algorithm>
 #include <godot_cpp/classes/font.hpp>
 #include <godot_cpp/classes/input_event_mouse_button.hpp>
 #include <godot_cpp/classes/input_event_mouse_motion.hpp>
 #include <godot_cpp/classes/input_event_pan_gesture.hpp>
 #include <godot_cpp/classes/style_box_flat.hpp>
 #include <godot_cpp/classes/theme_db.hpp>
-
-#include <algorithm>
 
 namespace godot {
 	void VTimelinePanel::_bind_methods() {
@@ -24,6 +23,8 @@ namespace godot {
 		BIND_ENUM_CONSTANT(HH_MM_SS);
 		BIND_ENUM_CONSTANT(MM_SS_MS);
 		BIND_ENUM_CONSTANT(SEC);
+
+		BIND_ENUM_CONSTANT(BEAT_BAR);
 
 		BIND_ENUM_CONSTANT(BAR_NUMBER_TOP_DOWN);
 		BIND_ENUM_CONSTANT(BAR_NUMBER_BOTTOM_UP);
@@ -90,10 +91,10 @@ namespace godot {
 		ClassDB::bind_method(D_METHOD("get_show_subdivision"), &VTimelinePanel::get_show_subdivision);
 		ADD_PROPERTY(PropertyInfo(Variant::INT, "frame_show_subdivision"), "set_show_subdivision", "get_show_subdivision");
 
-		ADD_GROUP("Beat", "beat_");
+		ADD_GROUP("Beat", "");
 		ClassDB::bind_method(D_METHOD("set_bpms", "bpms"), &VTimelinePanel::set_bpms);
 		ClassDB::bind_method(D_METHOD("get_bpms"), &VTimelinePanel::get_bpms);
-		ADD_PROPERTY(PropertyInfo(Variant::DICTIONARY, "beat_bpms", PROPERTY_HINT_DICTIONARY_TYPE, "float;int"), "set_bpms", "get_bpms");
+		ADD_PROPERTY(PropertyInfo(Variant::DICTIONARY, "bpms", PROPERTY_HINT_DICTIONARY_TYPE, "float;int"), "set_bpms", "get_bpms");
 
 		ClassDB::bind_method(D_METHOD("set_beat_per_bar", "num"), &VTimelinePanel::set_beat_per_bar);
 		ClassDB::bind_method(D_METHOD("get_beat_per_bar"), &VTimelinePanel::get_beat_per_bar);
@@ -101,23 +102,27 @@ namespace godot {
 
 		ClassDB::bind_method(D_METHOD("set_beat_line_color", "color"), &VTimelinePanel::set_beat_line_color);
 		ClassDB::bind_method(D_METHOD("get_beat_line_color"), &VTimelinePanel::get_beat_line_color);
-		ADD_PROPERTY(PropertyInfo(Variant::COLOR, "beat_beat_line_color"), "set_beat_line_color", "get_beat_line_color");
+		ADD_PROPERTY(PropertyInfo(Variant::COLOR, "beat_line_color"), "set_beat_line_color", "get_beat_line_color");
 
 		ClassDB::bind_method(D_METHOD("set_beat_line_width", "width"), &VTimelinePanel::set_beat_line_width);
 		ClassDB::bind_method(D_METHOD("get_beat_line_width"), &VTimelinePanel::get_beat_line_width);
-		ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "beat_beat_line_width"), "set_beat_line_width", "get_beat_line_width");
+		ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "beat_line_width"), "set_beat_line_width", "get_beat_line_width");
 
 		ClassDB::bind_method(D_METHOD("set_bar_line_color", "color"), &VTimelinePanel::set_bar_line_color);
 		ClassDB::bind_method(D_METHOD("get_bar_line_color"), &VTimelinePanel::get_bar_line_color);
-		ADD_PROPERTY(PropertyInfo(Variant::COLOR, "beat_bar_line_color"), "set_bar_line_color", "get_bar_line_color");
+		ADD_PROPERTY(PropertyInfo(Variant::COLOR, "bar_line_color"), "set_bar_line_color", "get_bar_line_color");
 
 		ClassDB::bind_method(D_METHOD("set_bar_line_width", "width"), &VTimelinePanel::set_bar_line_width);
 		ClassDB::bind_method(D_METHOD("get_bar_line_width"), &VTimelinePanel::get_bar_line_width);
-		ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "beat_bar_line_width"), "set_bar_line_width", "get_bar_line_width");
+		ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "bar_line_width"), "set_bar_line_width", "get_bar_line_width");
 
 		ClassDB::bind_method(D_METHOD("set_bar_number_direction", "direction"), &VTimelinePanel::set_bar_number_direction);
 		ClassDB::bind_method(D_METHOD("get_bar_number_direction"), &VTimelinePanel::get_bar_number_direction);
-		ADD_PROPERTY(PropertyInfo(Variant::INT, "beat_bar_number_direction", PROPERTY_HINT_ENUM, "Top Down,Bottom Up"), "set_bar_number_direction", "get_bar_number_direction");
+		ADD_PROPERTY(PropertyInfo(Variant::INT, "bar_number_direction", PROPERTY_HINT_ENUM, "Top Down,Bottom Up"), "set_bar_number_direction", "get_bar_number_direction");
+
+		ClassDB::bind_method(D_METHOD("set_beat_format", "direction"), &VTimelinePanel::set_beat_format);
+		ClassDB::bind_method(D_METHOD("get_beat_format"), &VTimelinePanel::get_beat_format);
+		ADD_PROPERTY(PropertyInfo(Variant::INT, "beat_format", PROPERTY_HINT_ENUM, "Beat Bar"), "set_beat_format", "get_beat_format");
 		ADD_GROUP("", "");
 
 		ADD_GROUP("Separator", "separator_");
@@ -288,16 +293,16 @@ namespace godot {
 					float y = 0.0f;
 					float y_end = 0.0f;
 					switch (counting_unit) {
-						case FRAME: {
-							y = _frame_to_y(static_cast<int64_t>(key->get_time()));
-							y_end = _frame_to_y(static_cast<int64_t>(key->get_time() + key->get_length()));
-						} break;
-						case BEAT:
-						case TIME:
-						default: {
-							y = _time_to_y(key->get_time());
-							y_end = _time_to_y(key->get_time() + key->get_length());
-						} break;
+					case FRAME: {
+						y = _frame_to_y(static_cast<int64_t>(key->get_time()));
+						y_end = _frame_to_y(static_cast<int64_t>(key->get_time() + key->get_length()));
+					} break;
+					case BEAT:
+					case TIME:
+					default: {
+						y = _time_to_y(key->get_time());
+						y_end = _time_to_y(key->get_time() + key->get_length());
+					} break;
 					}
 
 					if (key->is_instant()) {
@@ -345,7 +350,8 @@ namespace godot {
 						Rect2 bar_rect;
 						if (y_end < y) {
 							bar_rect = Rect2(ct.x_offset - hscroll_value, y_end, ct.width, y - y_end);
-						} else {
+						}
+						else {
 							bar_rect = Rect2(ct.x_offset - hscroll_value, y, ct.width, y_end - y);
 						}
 						Ref<StyleBox> style;
@@ -378,6 +384,7 @@ namespace godot {
 					}
 				}
 			}
+
 			// 绘制指示器
 			TypedArray<TimelineIndicator> all_indicators;
 			for (int i = 0; i < markers.size(); i++) {
@@ -590,16 +597,16 @@ namespace godot {
 				float y = 0.0f;
 				float y_end = 0.0f;
 				switch (counting_unit) {
-					case FRAME: {
-						y = _frame_to_y(static_cast<int64_t>(key->get_time()));
-						y_end = _frame_to_y(static_cast<int64_t>(key->get_time() + key->get_length()));
-					} break;
-					case BEAT:
-					case TIME:
-					default: {
-						y = _time_to_y(key->get_time());
-						y_end = _time_to_y(key->get_time() + key->get_length());
-					} break;
+				case FRAME: {
+					y = _frame_to_y(static_cast<int64_t>(key->get_time()));
+					y_end = _frame_to_y(static_cast<int64_t>(key->get_time() + key->get_length()));
+				} break;
+				case BEAT:
+				case TIME:
+				default: {
+					y = _time_to_y(key->get_time());
+					y_end = _time_to_y(key->get_time() + key->get_length());
+				} break;
 				}
 
 				Rect2 key_rect;
@@ -823,7 +830,7 @@ namespace godot {
 		_row_total = _beat_total * beats_per_bar;
 	}
 
-	float VTimelinePanel::_time_to_y(double p_time) const {
+	double VTimelinePanel::_time_to_y(double p_time) const {
 		if (counting_unit == BEAT) {
 			double row = _time_to_beat(p_time) * beats_per_bar;
 			if (bar_number_direction == BAR_NUMBER_BOTTOM_UP) {
@@ -839,13 +846,25 @@ namespace godot {
 		}
 	}
 
-	double VTimelinePanel::_y_to_time(float p_y) const {
+	double VTimelinePanel::_y_to_time(double p_y) const {
 		double time;
 		if (bar_number_direction == BAR_NUMBER_BOTTOM_UP) {
-			time = (header_height + content_height - p_y - vscroll_value) / scale;
+			if (counting_unit == BEAT) {
+				double beat = (header_height + content_height - p_y - vscroll_value) / scale;
+				time = _beat_to_time(beat);
+			}
+			else {
+				time = (header_height + content_height - p_y - vscroll_value) / scale;
+			}
 		}
 		else {
-			time = (p_y - header_height + vscroll_value) / scale;
+			if (counting_unit == BEAT) {
+				double beat = (p_y - header_height + vscroll_value) / scale;
+				time = _beat_to_time(beat);
+			}
+			else {
+				time = (p_y - header_height + vscroll_value) / scale;
+			}
 		}
 		if (time < 0) time = 0;
 		if (time > duration) time = duration;
@@ -909,14 +928,14 @@ namespace godot {
 		return from_sec + extra_sec;
 	}
 
-	float VTimelinePanel::_beat_to_y(double p_beat) const {
+	double VTimelinePanel::_beat_to_y(double p_beat) const {
 		if (bar_number_direction == BAR_NUMBER_BOTTOM_UP) {
 			return header_height + content_height - p_beat * (scale / beats_per_bar) - vscroll_value;
 		}
 		return header_height + p_beat * (scale / beats_per_bar) - vscroll_value;
 	}
 
-	double VTimelinePanel::_y_to_beat(float p_y) const {
+	double VTimelinePanel::_y_to_beat(double p_y) const {
 		double beat;
 		if (bar_number_direction == BAR_NUMBER_BOTTOM_UP) {
 			beat = (header_height + content_height - p_y - vscroll_value) / (scale / beats_per_bar);
@@ -931,14 +950,14 @@ namespace godot {
 		return beat;
 	}
 
-	float VTimelinePanel::_frame_to_y(int64_t p_frame) const {
+	double VTimelinePanel::_frame_to_y(int64_t p_frame) const {
 		if (bar_number_direction == BAR_NUMBER_BOTTOM_UP) {
 			return header_height + content_height - p_frame * scale - vscroll_value;
 		}
 		return header_height + p_frame * scale - vscroll_value;
 	}
 
-	int64_t VTimelinePanel::_y_to_frame(float p_y) const {
+	int64_t VTimelinePanel::_y_to_frame(double p_y) const {
 		double frame;
 		if (bar_number_direction == BAR_NUMBER_BOTTOM_UP) {
 			frame = (header_height + content_height - p_y - vscroll_value) / scale;
@@ -1523,14 +1542,22 @@ namespace godot {
 			bool is_touchscreen_available = DisplayServer::get_singleton()->is_touchscreen_available();
 			if (mb->get_button_index() == MouseButton::MOUSE_BUTTON_LEFT) {
 				if (!is_touchscreen_available) {
-					// 只有桌面端左键才直接触发框选
-					if (mb->is_pressed() && mb->get_position().y > header_height) {
+					if (mb->is_pressed() && time_ruler.is_valid() && mb->get_position().x <= time_ruler->get_width()) {
+						// 在时间尺范围内点击，更新 current_time
+						playhead_dragging = true;
+						queue_redraw();
+					}
+					else if (mb->is_pressed() && mb->get_position().y > header_height) {
+						// 只有桌面端左键才直接触发框选
 						selecting = true;
 						select_start = mb->get_position();
 						select_end = select_start;
 						queue_redraw();
 					}
 					else {
+						if (playhead_dragging) {
+							playhead_dragging = false;
+						}
 						if (selecting) {
 							selecting = false;
 							_collect_selected_keys();
@@ -1564,7 +1591,10 @@ namespace godot {
 					time_since_motion = 0;
 				}
 				else {
-					if (selecting) {
+					if (playhead_dragging) {
+						playhead_dragging = false;
+					}
+					else if (selecting) {
 						selecting = false;
 						_collect_selected_keys();
 						queue_redraw();
@@ -1589,6 +1619,12 @@ namespace godot {
 			}
 
 			if (mb->is_pressed()) {
+				if (mb->is_pressed() && time_ruler.is_valid() && mb->get_position().x <= time_ruler->get_width()) {
+					// 在时间尺范围内点击，更新 current_time
+					playhead_dragging = true;
+					queue_redraw();
+				}
+
 				if (drag_touching) {
 					_cancel_drag();
 				}
@@ -1627,6 +1663,11 @@ namespace godot {
 		Ref<InputEventMouseMotion> mm = p_gui_input;
 
 		if (mm.is_valid()) {
+			if (playhead_dragging) {
+				double new_time = get_time_from_position(mm->get_position().y);
+				set_current_time(new_time);
+			}
+
 			if (selecting) {
 				select_end = mm->get_position();
 				queue_redraw();
@@ -1842,27 +1883,27 @@ namespace godot {
 	}
 
 	double VTimelinePanel::get_time_from_position(const double p_position) const {
-		return _y_to_time(static_cast<float>(p_position));
+		return _y_to_time(p_position);
 	}
 
 	double VTimelinePanel::get_frame_from_position(const double p_position) const {
-		return static_cast<double>(_y_to_frame(static_cast<float>(p_position)));
+		return _y_to_frame(p_position);
 	}
 
 	double VTimelinePanel::get_beat_from_position(const double p_position) const {
-		return _y_to_beat(static_cast<float>(p_position));
+		return _y_to_beat(p_position);
 	}
 
 	double VTimelinePanel::get_position_from_time(double p_time) const {
-		return static_cast<double>(_time_to_y(p_time));
+		return _time_to_y(p_time);
 	}
 
 	double VTimelinePanel::get_position_from_frame(int64_t p_frame) const {
-		return static_cast<double>(_frame_to_y(p_frame));
+		return _frame_to_y(p_frame);
 	}
 
 	double VTimelinePanel::get_position_from_beat(double p_beat) const {
-		return static_cast<double>(_beat_to_y(p_beat));
+		return _beat_to_y(p_beat);
 	}
 
 	void VTimelinePanel::set_background_color(const Color& p_background_color) {
@@ -2051,6 +2092,15 @@ namespace godot {
 
 	VTimelinePanel::BarNumberDirection VTimelinePanel::get_bar_number_direction() const {
 		return bar_number_direction;
+	}
+
+	void VTimelinePanel::set_beat_format(BeatFormat p_format) {
+		beat_format = p_format;
+		queue_redraw();
+	}
+
+	VTimelinePanel::BeatFormat VTimelinePanel::get_beat_format() const {
+		return beat_format;
 	}
 
 	void VTimelinePanel::set_playhead(Ref<TimelineIndicator> p_playhead) {

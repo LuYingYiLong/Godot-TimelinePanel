@@ -30,6 +30,10 @@ namespace godot {
 			SEC
 		};
 
+		enum BeatFormat {
+			BEAT_BAR
+		};
+
 		enum BarNumberDirection {
 			BAR_NUMBER_TOP_DOWN,
 			BAR_NUMBER_BOTTOM_UP
@@ -98,7 +102,8 @@ namespace godot {
 		Color bar_line_color = Color("#5f8fc9");
 		float bar_line_width = -1.0f;
 		BarNumberDirection bar_number_direction = BAR_NUMBER_TOP_DOWN;
-		
+		BeatFormat beat_format = BEAT_BAR;
+
 		HScrollBar* hscroll = nullptr;
 		VScrollBar* vscroll = nullptr;
 		float content_width = 0.0f;
@@ -122,6 +127,9 @@ namespace godot {
 		float select_timer = 0.0f;
 		Vector2 select_start;
 		Vector2 select_end;
+
+		bool playhead_dragging = false;
+
 		void _collect_selected_keys();
 
 		void _scroll(ScrollBar* p_scroll, double p_amount);
@@ -148,7 +156,7 @@ namespace godot {
 		void _draw_grid_time(float p_header_width);
 		float _calculate_header_width() const;
 		float _calculate_grid_height() const;
-		
+
 		Array beat_map;
 		Array time_map;
 		double _beat_total = 0;
@@ -158,14 +166,14 @@ namespace godot {
 		void _build_beat_to_time_map();
 		void _calculate_beat_total();
 		void _calculate_row_total();
-		float _time_to_y(double p_time) const;
-		double _y_to_time(float p_y) const;
+		double _time_to_y(double p_time) const;
+		double _y_to_time(double p_y) const;
 		double _time_to_beat(double p_time) const;
 		double _beat_to_time(double p_beat) const;
-		float _beat_to_y(double p_beat) const;
-		double _y_to_beat(float p_y) const;
-		float _frame_to_y(int64_t p_frame) const;
-		int64_t _y_to_frame(float p_y) const;
+		double _beat_to_y(double p_beat) const;
+		double _y_to_beat(double p_y) const;
+		double _frame_to_y(int64_t p_frame) const;
+		int64_t _y_to_frame(double p_y) const;
 
 		void _on_resource_changed();
 		struct CachedTrack {
@@ -206,7 +214,6 @@ namespace godot {
 		virtual void _gui_input(const Ref<InputEvent>& p_gui_input) override;
 		virtual String _get_tooltip(const Vector2& p_at_position) const override;
 
-		// 轨道键管理
 		TimelineTrackKey* create_key(int p_track_index, double p_time, double p_length = 0.0);
 		void remove_key(int p_track_index, int p_key_index);
 		void clear_track_keys(int p_track_index);
@@ -279,6 +286,9 @@ namespace godot {
 		void set_bar_number_direction(BarNumberDirection p_direction);
 		BarNumberDirection get_bar_number_direction() const;
 
+		void set_beat_format(BeatFormat p_format);
+		BeatFormat get_beat_format() const;
+
 		void set_playhead(Ref<TimelineIndicator> p_playhead);
 		Ref<TimelineIndicator> get_playhead() const;
 
@@ -337,6 +347,7 @@ namespace godot {
 
 VARIANT_ENUM_CAST(VTimelinePanel::CountingUnit);
 VARIANT_ENUM_CAST(VTimelinePanel::TimeFormat);
+VARIANT_ENUM_CAST(VTimelinePanel::BeatFormat);
 VARIANT_ENUM_CAST(VTimelinePanel::BarNumberDirection);
 VARIANT_ENUM_CAST(VTimelinePanel::ScrollMode);
 
