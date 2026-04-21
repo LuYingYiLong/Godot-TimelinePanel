@@ -12,11 +12,21 @@ namespace godot {
 		String annotation;
 		double time = 0.0f;
 
+		Ref<TextLine> text_line;
+
 	protected:
 		static void _bind_methods();
 
 	public:
-		virtual String _get_text(const int counting_unit, const double current_value, const double current_position) const override;
+		TimelineMarker();
+
+		virtual void _draw(
+			const RID& p_to_canvas_item,
+			const Rect2& p_header_rect,
+			const String& p_text,
+			const double line_length,
+			const bool vertical
+		) override;
 
 		void set_name(const String& p_name);
 		String get_name() const;

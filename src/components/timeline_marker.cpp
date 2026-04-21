@@ -1,5 +1,8 @@
 #include "timeline_marker.h"
 
+#include <godot_cpp/classes/theme_db.hpp>
+#include <godot_cpp/classes/rendering_server.hpp>
+
 namespace godot {
 	void TimelineMarker::_bind_methods() {
 		ClassDB::bind_method(D_METHOD("set_name", "name"), &TimelineMarker::set_name);
@@ -15,8 +18,40 @@ namespace godot {
 		ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "time", PROPERTY_HINT_RANGE, "0,99999,0.01,or_greater,suffix:s"), "set_time", "get_time");
 	}
 
-	String TimelineMarker::_get_text(const int counting_unit, const double current_value, const double current_position) const {
-		return name;
+	TimelineMarker::TimelineMarker() {
+		text_line.instantiate();
+	}
+
+	void TimelineMarker::_draw(
+		const RID& p_to_canvas_item,
+		const Rect2& p_header_rect,
+		const String& p_text,
+		const double line_length,
+		const bool vertical
+	) {
+		if (GDVIRTUAL_CALL(_draw, p_to_canvas_item, p_header_rect, p_text, line_length, vertical)) {
+			return;
+		}
+
+		Point2 pos = Vector2(0.0f, p_header_rect.position.y + p_header_rect.size.y / 2.0);
+		if (is_show_line()) {
+			RenderingServer::get_singleton()->canvas_item_add_line(
+				p_to_canvas_item,
+				pos,
+				Point2(vertical ? pos.x : pos.x + line_length, vertical ? pos.y + line_length : pos.y),
+				get_line_color(),
+				get_line_width()
+			);
+		}
+
+		Ref<StyleBox> style = get_style();
+		if (style.is_valid()) {
+			style->draw(p_to_canvas_item, p_header_rect);
+		}
+
+		text_line->clear();
+		text_line->add_string(name, ThemeDB::get_singleton()->get_fallback_font(), get_font_size());
+		text_line->draw(p_to_canvas_item, Vector2(4.0f, pos.y - (get_font_size() / 2.0f) + get_font_offset()), get_font_color());
 	}
 
 	void TimelineMarker::set_name(const String& p_name) {

@@ -7,6 +7,7 @@
 #include "components/timeline_time_ruler.h"
 #include "components/timeline_track.h"
 #include "components/timeline_track_key.h"
+#include "style/style_box_arrow.h"
 
 #include <gdextension_interface.h>
 #include <godot_cpp/core/defs.hpp>
@@ -29,6 +30,8 @@ void initialize_timeline_panel_module(ModuleInitializationLevel p_level) {
 	GDREGISTER_CLASS(TimelineTimeRuler);
 	GDREGISTER_CLASS(TimelineTrack);
 	GDREGISTER_CLASS(TimelineTrackKey);
+
+	GDREGISTER_CLASS(StyleBoxArrow);
 
 	GDREGISTER_CLASS(VTimelinePanel);
 }

@@ -138,19 +138,6 @@ namespace godot {
 
 		void _draw_header(const Point2& pos, const float width, Ref<StyleBox> header_bg, Ref<Texture2D> header_icon);
 		void _draw_time_ruler_ticks(float p_header_width);
-		void _draw_indicator(
-			const double time,
-			const PackedVector2Array& points,
-			const PackedColorArray& colors,
-			const String& text,
-			const Ref<Font> font,
-			const Vector2& font_pos,
-			const int64_t font_size,
-			const Color& font_color,
-			const bool show_line,
-			const float line_width,
-			const Color& line_color
-		);
 		void _draw_grid_beat(float p_header_width);
 		void _draw_grid_frame(float p_header_width);
 		void _draw_grid_time(float p_header_width);

@@ -386,57 +386,50 @@ namespace godot {
 			}
 
 			// 绘制指示器
-			TypedArray<TimelineIndicator> all_indicators;
-			for (int i = 0; i < markers.size(); i++) {
-				Ref<TimelineIndicator> indicator = markers[i];
-				if (indicator.is_valid()) {
-					all_indicators.append(markers[i]);
+			if (time_ruler.is_valid()) {
+				TypedArray<TimelineIndicator> all_indicators;
+				for (int i = 0; i < markers.size(); i++) {
+					Ref<TimelineIndicator> indicator = markers[i];
+					if (indicator.is_valid()) {
+						all_indicators.append(markers[i]);
+					}
 				}
-			}
-			if (playhead.is_valid()) {
-				all_indicators.append(playhead);
-			}
-
-			for (int i = 0; i < all_indicators.size(); i++) {
-				float current_width = 0.0f;
-				if (time_ruler.is_valid()) {
-					current_width += time_ruler->get_width();
+				if (playhead.is_valid()) {
+					all_indicators.append(playhead);
 				}
 
-				Ref<TimelineIndicator> indicator = all_indicators[i];
-				double current_position = 0.0;
-				double time = current_time;
-				Ref<TimelineMarker> marker = indicator;
-				if (marker.is_valid()) {
-					time = marker->get_time();
-				}
+				for (int i = 0; i < all_indicators.size(); i++) {
+					float current_width = 0.0f;
+					if (time_ruler.is_valid()) {
+						current_width += time_ruler->get_width();
+					}
 
-				switch (counting_unit) {
-				case FRAME: {
-					int64_t frame = static_cast<int64_t>(time * fps);
-					current_position = get_position_from_frame(frame);
-					break;
+					Ref<TimelineIndicator> indicator = all_indicators[i];
+					double current_position = 0.0;
+					double time = current_time;
+					Ref<TimelineMarker> marker = indicator;
+					if (marker.is_valid()) {
+						time = marker->get_time();
+					}
+
+					switch (counting_unit) {
+					case FRAME: {
+						int64_t frame = static_cast<int64_t>(time * fps);
+						current_position = get_position_from_frame(frame);
+						break;
+					}
+					case BEAT: {
+						current_position = _time_to_y(time);
+						break;
+					}
+					case TIME:
+					default:
+						current_position = get_position_from_time(time);
+						break;
+					}
+					Rect2 header_rect = Rect2(Vector2(0.0f, current_position - 8.0f), Vector2(time_ruler->get_width(), 16.0f));
+					indicator->draw(get_canvas_item(), header_rect, String::num(current_time), header_width, false);
 				}
-				case BEAT: {
-					current_position = _time_to_y(time);
-					break;
-				}
-				case TIME:
-				default:
-					current_position = get_position_from_time(time);
-					break;
-				}
-				const PackedVector2Array points = indicator->_get_points(current_position, current_width);
-				const PackedColorArray colors = indicator->_get_colors(current_position);
-				const String text = indicator->_get_text(static_cast<int>(counting_unit), time, current_position);
-				const Ref<Font> font = indicator->_get_font(current_position);
-				const Vector2 font_pos = indicator->_get_font_pos(current_position);
-				const int64_t font_size = indicator->_get_font_size(current_position);
-				const Color font_color = indicator->_get_font_color(current_position);
-				const bool show_line = indicator->_can_show_line(current_position);
-				const float line_width = indicator->_get_line_width(current_position);
-				const Color line_color = indicator->_get_line_color(current_position);
-				_draw_indicator(time, points, colors, text, font, font_pos, font_size, font_color, show_line, line_width, line_color);
 			}
 
 			if (selecting) {
@@ -1250,42 +1243,6 @@ namespace godot {
 			break;
 		}
 		}
-	}
-
-	void VTimelinePanel::_draw_indicator(
-		const double time,
-		const PackedVector2Array& points,
-		const PackedColorArray& colors,
-		const String& text,
-		const Ref<Font> font,
-		const Vector2& font_pos,
-		const int64_t font_size,
-		const Color& font_color,
-		const bool show_line,
-		const float line_width,
-		const Color& line_color
-	) {
-		draw_polygon(points, colors);
-		if (show_line) {
-			double line_position;
-			switch (counting_unit) {
-			case FRAME: {
-				int64_t frame = static_cast<int64_t>(time * fps);
-				line_position = get_position_from_frame(frame);
-				break;
-			}
-			case BEAT: {
-				line_position = _time_to_y(time);
-				break;
-			}
-			case TIME:
-			default:
-				line_position = get_position_from_time(time);
-				break;
-			}
-			draw_line(Point2(0.0f, line_position), Point2(header_width, line_position), line_color, line_width);
-		}
-		draw_string(font, font_pos, text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, font_color);
 	}
 
 	void VTimelinePanel::_draw_grid_beat(float p_header_width) {

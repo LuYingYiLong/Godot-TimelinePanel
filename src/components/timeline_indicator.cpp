@@ -1,23 +1,15 @@
 #include "timeline_indicator.h"
 
 #include <godot_cpp/classes/theme_db.hpp>
+#include <godot_cpp/classes/rendering_server.hpp>
 
 namespace godot {
 	void TimelineIndicator::_bind_methods() {
-		GDVIRTUAL_BIND(_get_points, "current_position", "current_width");
-		GDVIRTUAL_BIND(_get_colors, "current_position");
-		GDVIRTUAL_BIND(_get_text, "counting_unit", "current_value", "current_position");
-		GDVIRTUAL_BIND(_get_font, "current_position");
-		GDVIRTUAL_BIND(_get_font_pos, "current_position");
-		GDVIRTUAL_BIND(_get_font_size, "current_position");
-		GDVIRTUAL_BIND(_get_font_color, "current_position");
-		GDVIRTUAL_BIND(_can_show_line, "current_position");
-		GDVIRTUAL_BIND(_get_line_width, "current_position");
-		GDVIRTUAL_BIND(_get_line_color, "current_position");
+		GDVIRTUAL_BIND(_draw, "to_canvas_item", "header_rect", "text", "line_length", "vertical");
 
-		ClassDB::bind_method(D_METHOD("set_color", "color"), &TimelineIndicator::set_color);
-		ClassDB::bind_method(D_METHOD("get_color"), &TimelineIndicator::get_color);
-		ADD_PROPERTY(PropertyInfo(Variant::COLOR, "color"), "set_color", "get_color");
+		ClassDB::bind_method(D_METHOD("set_style", "style"), &TimelineIndicator::set_style);
+		ClassDB::bind_method(D_METHOD("get_style"), &TimelineIndicator::get_style);
+		ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "style", PROPERTY_HINT_RESOURCE_TYPE, "StyleBox"), "set_style", "get_style");
 
 		ClassDB::bind_method(D_METHOD("set_font_size", "font_size"), &TimelineIndicator::set_font_size);
 		ClassDB::bind_method(D_METHOD("get_font_size"), &TimelineIndicator::get_font_size);
@@ -35,106 +27,67 @@ namespace godot {
 		ClassDB::bind_method(D_METHOD("is_show_line"), &TimelineIndicator::is_show_line);
 		ADD_PROPERTY(PropertyInfo(Variant::BOOL, "show_line"), "set_show_line", "is_show_line");
 
+		ClassDB::bind_method(D_METHOD("set_line_color", "color"), &TimelineIndicator::set_line_color);
+		ClassDB::bind_method(D_METHOD("get_line_color"), &TimelineIndicator::get_line_color);
+		ADD_PROPERTY(PropertyInfo(Variant::COLOR, "line_color"), "set_line_color", "get_line_color");
+
 		ClassDB::bind_method(D_METHOD("set_line_width", "line_width"), &TimelineIndicator::set_line_width);
 		ClassDB::bind_method(D_METHOD("get_line_width"), &TimelineIndicator::get_line_width);
 		ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "line_width"), "set_line_width", "get_line_width");
 	}
 
-	PackedVector2Array TimelineIndicator::_get_points(const double current_position, const double current_width) const {
-		PackedVector2Array ret;
-		if (GDVIRTUAL_CALL(_get_points, current_position, current_width, ret)) {
-			return ret;
-		}
-		ret.append(Vector2(0.0f, current_position + 6.0f));
-		ret.append(Vector2(current_width - 6.0f, current_position + 6.0f));
-		ret.append(Vector2(current_width, current_position));
-		ret.append(Vector2(current_width - 6.0f, current_position - 6.0f));
-		ret.append(Vector2(0.0f, current_position - 6.0f));
-		return ret;
+	TimelineIndicator::TimelineIndicator() {
+		text_line.instantiate();
 	}
 
-	PackedColorArray TimelineIndicator::_get_colors(const double current_position) const {
-		PackedColorArray ret;
-		if (GDVIRTUAL_CALL(_get_colors, current_position, ret)) {
-			return ret;
+	void TimelineIndicator::_draw(
+		const RID& p_to_canvas_item,
+		const Rect2& p_header_rect,
+		const String& p_text,
+		const double line_length,
+		const bool vertical
+	) {
+		if (GDVIRTUAL_CALL(_draw, p_to_canvas_item, p_header_rect, p_text, line_length, vertical)) {
+			return;
 		}
-		ret.append(color);
-		return ret;
+
+		Point2 pos = Vector2(0.0f, p_header_rect.position.y + p_header_rect.size.y / 2.0);
+		if (show_line) {
+			RenderingServer::get_singleton()->canvas_item_add_line(
+				p_to_canvas_item,
+				pos,
+				Point2(vertical ? pos.x : pos.x + line_length, vertical ? pos.y + line_length : pos.y),
+				line_color,
+				line_width
+			);
+		}
+
+		if (style.is_valid()) {
+			style->draw(p_to_canvas_item, p_header_rect);
+		}
+
+		text_line->clear();
+		text_line->add_string(p_text, ThemeDB::get_singleton()->get_fallback_font(), font_size);
+		text_line->draw(p_to_canvas_item, Vector2(4.0f, pos.y - (font_size / 2.0f) + font_offset), font_color);
 	}
 
-	String TimelineIndicator::_get_text(const int counting_unit, const double current_value, const double current_position) const {
-		String ret;
-		if (GDVIRTUAL_CALL(_get_text, counting_unit, current_value, current_position, ret)) {
-			return ret;
-		}
-		ret = String::num(current_value);
-		return ret;
+	void TimelineIndicator::draw(
+		const RID& p_to_canvas_item,
+		const Rect2& p_header_rect,
+		const String& p_text,
+		const double line_length,
+		const bool vertical
+	) {
+		_draw(p_to_canvas_item, p_header_rect, p_text, line_length, vertical);
 	}
 
-	Ref<Font> TimelineIndicator::_get_font(const double current_position) const {
-		Ref<Font> ret = ThemeDB::get_singleton()->get_fallback_font();
-		if (GDVIRTUAL_CALL(_get_font, current_position, ret)) {
-			return ret;
-		}
-		return ret;
-	}
-
-	Vector2 TimelineIndicator::_get_font_pos(const double current_position) const {
-		Vector2 ret;
-		if (GDVIRTUAL_CALL(_get_font_pos, current_position, ret)) {
-			return ret;
-		}
-		ret = Vector2(4.0f, current_position + (font_size / 2.0f) + font_offset);
-		return ret;
-	}
-
-	int64_t TimelineIndicator::_get_font_size(const double current_position) const {
-		int64_t ret;
-		if (GDVIRTUAL_CALL(_get_font_size, current_position, ret)) {
-			return ret;
-		}
-		return font_size;
-	}
-
-	Color TimelineIndicator::_get_font_color(const double current_position) const {
-		Color ret;
-		if (GDVIRTUAL_CALL(_get_font_color, current_position, ret)) {
-			return ret;
-		}
-		return font_color;
-	}
-
-	bool TimelineIndicator::_can_show_line(const double current_position) const {
-		bool ret;
-		if (GDVIRTUAL_CALL(_can_show_line, current_position, ret)) {
-			return ret;
-		}
-		return show_line;
-	}
-
-	float TimelineIndicator::_get_line_width(const double current_position) const {
-		float ret;
-		if (GDVIRTUAL_CALL(_get_line_width, current_position, ret)) {
-			return ret;
-		}
-		return line_width;
-	}
-
-	Color TimelineIndicator::_get_line_color(const double current_position) const {
-		Color ret;
-		if (GDVIRTUAL_CALL(_get_line_color, current_position, ret)) {
-			return ret;
-		}
-		return color;
-	}
-
-	void TimelineIndicator::set_color(const Color& p_color) {
-		color = p_color;
+	void TimelineIndicator::set_style(Ref<StyleBox> p_style) {
+		style = p_style;
 		emit_changed();
 	}
 
-	Color TimelineIndicator::get_color() const {
-		return color;
+	Ref<StyleBox> TimelineIndicator::get_style() const {
+		return style;
 	}
 
 	void TimelineIndicator::set_font_size(const int64_t p_font_size) {
@@ -171,6 +124,14 @@ namespace godot {
 
 	bool TimelineIndicator::is_show_line() const {
 		return show_line;
+	}
+
+	void TimelineIndicator::set_line_color(const Color& p_color) {
+		line_color = p_color;
+	}
+
+	Color TimelineIndicator::get_line_color() const {
+		return line_color;
 	}
 
 	void TimelineIndicator::set_line_width(const float p_line_width) {

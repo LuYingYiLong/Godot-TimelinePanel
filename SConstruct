@@ -16,7 +16,7 @@ env = SConscript("godot-cpp/SConstruct")
 env.Append(CPPPATH=["src/"])
 
 # Collect C++ sources
-sources = Glob("src/*.cpp") + Glob("src/components/*.cpp")
+sources = Glob("src/*.cpp") + Glob("src/components/*.cpp") + Glob("src/style/*.cpp")
 
 # if env["target"] in ["editor", "template_debug"]:
 #     try:

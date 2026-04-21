@@ -15,6 +15,12 @@
     <Filter Include="Source Files\components">
       <UniqueIdentifier>{d4edbf9c-c5e0-4ae8-bfc5-9a6e98b369d8}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Header Files\style">
+      <UniqueIdentifier>{e1f3f860-180d-416f-b597-04c069a4beaf}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\style">
+      <UniqueIdentifier>{eb19964b-769b-4add-9536-14421cf1b58e}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\register_types.h">
@@ -41,6 +47,9 @@
     <ClInclude Include="src\components\timeline_track_key.h">
       <Filter>Header Files\components</Filter>
     </ClInclude>
+    <ClInclude Include="src\style\style_box_arrow.h">
+      <Filter>Header Files\style</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\register_types.cpp">
@@ -66,6 +75,9 @@
     </ClCompile>
     <ClCompile Include="src\components\timeline_track_key.cpp">
       <Filter>Source Files\components</Filter>
+    </ClCompile>
+    <ClCompile Include="src\style\style_box_arrow.cpp">
+      <Filter>Source Files\style</Filter>
     </ClCompile>
   </ItemGroup>
 </Project>
