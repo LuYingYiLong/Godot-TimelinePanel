@@ -37,9 +37,11 @@ namespace godot {
 		bool is_disabled() const;
 
 		void set_time(double p_time);
+		void set_time_no_signal(double p_time);
 		double get_time() const;
 
 		void set_length(double p_length);
+		void set_length_no_signal(double p_length);
 		double get_length() const;
 
 		void set_text(const String& p_text);

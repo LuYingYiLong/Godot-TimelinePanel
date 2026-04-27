@@ -7,6 +7,7 @@
 #include "components/timeline_track_key.h"
 
 #include <algorithm>
+#include <unordered_set>
 #include <godot_cpp/classes/font.hpp>
 #include <godot_cpp/classes/input_event_mouse_button.hpp>
 #include <godot_cpp/classes/input_event_mouse_motion.hpp>
@@ -35,7 +36,7 @@ namespace godot {
 		BIND_ENUM_CONSTANT(SCROLL_MODE_SHOW_NEVER);
 		BIND_ENUM_CONSTANT(SCROLL_MODE_RESERVE);
 
-		ClassDB::bind_method(D_METHOD("create_key", "track_index", "time", "length"), &VTimelinePanel::create_key, DEFVAL(0.0f));
+		ClassDB::bind_method(D_METHOD("create_key", "track_index", "time", "length", "snap"), &VTimelinePanel::create_key, DEFVAL(0.0f), DEFVAL(false));
 		ClassDB::bind_method(D_METHOD("remove_key", "track_index", "key_index"), &VTimelinePanel::remove_key);
 		ClassDB::bind_method(D_METHOD("clear_track_keys", "track_index"), &VTimelinePanel::clear_track_keys);
 		ClassDB::bind_method(D_METHOD("clear_all_keys"), &VTimelinePanel::clear_all_keys);
@@ -183,6 +184,21 @@ namespace godot {
 		ADD_PROPERTY(PropertyInfo(Variant::INT, "scroll_deadzone"), "set_deadzone", "get_deadzone");
 		ADD_GROUP("", "");
 
+		ADD_GROUP("Key Editing", "");
+		ClassDB::bind_method(D_METHOD("set_allow_key_cross_track_move", "enabled"), &VTimelinePanel::set_allow_key_cross_track_move);
+		ClassDB::bind_method(D_METHOD("get_allow_key_cross_track_move"), &VTimelinePanel::get_allow_key_cross_track_move);
+		ADD_PROPERTY(PropertyInfo(Variant::BOOL, "allow_key_cross_track_move"), "set_allow_key_cross_track_move", "get_allow_key_cross_track_move");
+		ClassDB::bind_method(D_METHOD("set_key_snap_enabled", "enabled"), &VTimelinePanel::set_key_snap_enabled);
+		ClassDB::bind_method(D_METHOD("get_key_snap_enabled"), &VTimelinePanel::get_key_snap_enabled);
+		ADD_PROPERTY(PropertyInfo(Variant::BOOL, "key_snap_enabled"), "set_key_snap_enabled", "get_key_snap_enabled");
+		ClassDB::bind_method(D_METHOD("set_clip_key_edge_edit_enabled", "enabled"), &VTimelinePanel::set_clip_key_edge_edit_enabled);
+		ClassDB::bind_method(D_METHOD("get_clip_key_edge_edit_enabled"), &VTimelinePanel::get_clip_key_edge_edit_enabled);
+		ADD_PROPERTY(PropertyInfo(Variant::BOOL, "clip_key_edge_edit_enabled"), "set_clip_key_edge_edit_enabled", "get_clip_key_edge_edit_enabled");
+		ClassDB::bind_method(D_METHOD("set_allow_unselected_key_edit", "enabled"), &VTimelinePanel::set_allow_unselected_key_edit);
+		ClassDB::bind_method(D_METHOD("get_allow_unselected_key_edit"), &VTimelinePanel::get_allow_unselected_key_edit);
+		ADD_PROPERTY(PropertyInfo(Variant::BOOL, "allow_unselected_key_edit"), "set_allow_unselected_key_edit", "get_allow_unselected_key_edit");
+		ADD_GROUP("", "");
+
 		ADD_GROUP("Style overrides", "");
 		ADD_SUBGROUP("Constants", "");
 		ClassDB::bind_method(D_METHOD("set_icon_max_width", "width"), &VTimelinePanel::set_icon_max_width);
@@ -214,12 +230,23 @@ namespace godot {
 		ClassDB::bind_method(D_METHOD("get_clip_key_selected_style"), &VTimelinePanel::get_clip_key_selected_style);
 		ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "clip_key_selected", PROPERTY_HINT_RESOURCE_TYPE, "StyleBox"), "set_clip_key_selected_style", "get_clip_key_selected_style");
 
+		ClassDB::bind_method(D_METHOD("set_key_release_preview_style", "style"), &VTimelinePanel::set_key_release_preview_style);
+		ClassDB::bind_method(D_METHOD("get_key_release_preview_style"), &VTimelinePanel::get_key_release_preview_style);
+		ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "key_release_preview", PROPERTY_HINT_RESOURCE_TYPE, "StyleBox"), "set_key_release_preview_style", "get_key_release_preview_style");
+
 		ADD_SIGNAL(MethodInfo("scroll_started"));
 		ADD_SIGNAL(MethodInfo("scroll_ended"));
 	}
 
 	void VTimelinePanel::_notification(int p_what) {
 		switch (p_what) {
+		case NOTIFICATION_MOUSE_EXIT:
+		case NOTIFICATION_MOUSE_EXIT_SELF: {
+			if (!clip_key_edge_dragging) {
+				set_default_cursor_shape(Control::CURSOR_ARROW);
+			}
+		} break;
+
 		case NOTIFICATION_RESIZED: {
 			_update_scroll_bar();
 		} break;
@@ -283,105 +310,90 @@ namespace godot {
 			}
 
 			// 绘制轨道键
+			Rect2 key_cull_rect(Vector2(0.0f, header_height), Vector2(get_size().x, MAX(get_size().y - header_height, 0.0f)));
+			double visible_start = 0.0;
+			double visible_end = 0.0;
+			_get_visible_key_time_range(16.0f, visible_start, visible_end);
+			Ref<StyleBox> key_release_preview_style = _get_key_release_preview_style();
+			std::vector<Rect2> key_release_preview_rects;
+
 			for (size_t i = 0; i < _track_cache.size(); i++) {
 				const auto& ct = _track_cache[i];
 				if (ct.width <= 0.0f) continue;
 
-				for (TimelineTrackKey* key : ct.keys) {
+				float track_x = ct.x_offset - hscroll_value;
+				if (track_x + ct.width < 0.0f || track_x > get_size().x) continue;
+
+				float key_margin = MAX(16.0f, ct.width * MAX(ct.max_instant_key_scale, 0.0f) * 0.5f + 16.0f);
+				double padded_start = 0.0;
+				double padded_end = 0.0;
+				_get_visible_key_time_range(key_margin, padded_start, padded_end);
+
+				const double search_start = MIN(padded_start, visible_start - MAX(ct.max_key_length, 0.0));
+				const double search_end = padded_end;
+				auto key_it = std::lower_bound(ct.keys.begin(), ct.keys.end(), search_start,
+					[](TimelineTrackKey* p_key, double p_time) {
+						return p_key && p_key->get_time() < p_time;
+					});
+				Rect2 track_cull_rect = key_cull_rect.grow(key_margin);
+
+				for (; key_it != ct.keys.end(); ++key_it) {
+					TimelineTrackKey* key = *key_it;
 					if (!key || key->is_disabled()) continue;
 
-					float y = 0.0f;
-					float y_end = 0.0f;
-					switch (counting_unit) {
-					case FRAME: {
-						y = _frame_to_y(static_cast<int64_t>(key->get_time()));
-						y_end = _frame_to_y(static_cast<int64_t>(key->get_time() + key->get_length()));
-					} break;
-					case BEAT:
-					case TIME:
-					default: {
-						y = _time_to_y(key->get_time());
-						y_end = _time_to_y(key->get_time() + key->get_length());
-					} break;
+					const double key_start = key->get_time();
+					if (key_start > search_end) {
+						break;
 					}
 
 					if (key->is_instant()) {
-						float key_scale = 0.4f;
-						if (style_cache.instant_key_scale != 0.4f) {
-							key_scale = style_cache.instant_key_scale;
-						}
-						else {
-							key_scale = key->get_instant_key_scale();
-						}
-						float pos_x = ct.x_offset - hscroll_value;
-						float pos_y = y - ct.width * 0.5f;
-						float width = ct.width * key_scale;
-						Rect2 key_rect(pos_x + width * 0.5f, pos_y + width * 0.5f, width, width);
-						Ref<StyleBox> style;
-						if (key->get_instant_key_normal_style().is_valid()) {
-							style = key->get_instant_key_normal_style();
-						}
-						else if (style_cache.instant_key_normal.is_valid()) {
-							style = style_cache.instant_key_normal;
-						}
-						else {
-							style = style_cache.instant_key_normal_fallback;
-						}
+						Rect2 key_rect = _get_instant_key_rect(ct, key, _key_to_y(key));
+						if (!track_cull_rect.intersects(key_rect)) continue;
+
+						Ref<StyleBox> style = _get_instant_key_normal_style(key);
 						if (style.is_valid()) {
 							draw_style_box(style, key_rect);
 						}
 						if (key->is_selected()) {
-							if (key->get_instant_key_selected_style().is_valid()) {
-								style = key->get_instant_key_selected_style();
-							}
-							else if (style_cache.instant_key_selected.is_valid()) {
-								style = style_cache.instant_key_selected;
-							}
-							else {
-								style = style_cache.instant_key_selected_fallback;
-							}
+							style = _get_instant_key_selected_style(key);
 							if (style.is_valid()) {
 								draw_style_box(style, key_rect);
 							}
 						}
+						if (_is_key_release_previewed(key)) {
+							key_release_preview_rects.push_back(key_rect);
+						}
 					}
 					else {
 						// 防止矩形尺寸出现负数
-						Rect2 bar_rect;
-						if (y_end < y) {
-							bar_rect = Rect2(ct.x_offset - hscroll_value, y_end, ct.width, y - y_end);
-						}
-						else {
-							bar_rect = Rect2(ct.x_offset - hscroll_value, y, ct.width, y_end - y);
-						}
-						Ref<StyleBox> style;
-						if (key->get_clip_key_normal_style().is_valid()) {
-							style = key->get_clip_key_normal_style();
-						}
-						else if (style_cache.clip_key_normal.is_valid()) {
-							style = style_cache.clip_key_normal;
-						}
-						else {
-							style = style_cache.clip_key_normal_fallback;
-						}
+						if (key_start > visible_end) continue;
+
+						const double key_end = key_start + key->get_length();
+						if (key_end < visible_start) continue;
+
+						Rect2 bar_rect = _get_clip_key_rect(ct, _key_to_y(key), _key_end_to_y(key));
+						if (!track_cull_rect.intersects(bar_rect)) continue;
+
+						Ref<StyleBox> style = _get_clip_key_normal_style(key);
 						if (style.is_valid()) {
 							draw_style_box(style, bar_rect);
 						}
 						if (key->is_selected()) {
-							if (key->get_clip_key_selected_style().is_valid()) {
-								style = key->get_clip_key_selected_style();
-							}
-							else if (style_cache.clip_key_selected.is_valid()) {
-								style = style_cache.clip_key_selected;
-							}
-							else {
-								style = style_cache.clip_key_selected_fallback;
-							}
+							style = _get_clip_key_selected_style(key);
 							if (style.is_valid()) {
 								draw_style_box(style, bar_rect);
 							}
 						}
+						if (_is_key_release_previewed(key)) {
+							key_release_preview_rects.push_back(bar_rect);
+						}
 					}
+				}
+			}
+
+			if (key_release_preview_style.is_valid()) {
+				for (const Rect2& preview_rect : key_release_preview_rects) {
+					draw_style_box(key_release_preview_style, preview_rect);
 				}
 			}
 
@@ -550,6 +562,15 @@ namespace godot {
 		clip_key_selected->set_expand_margin_all(4);
 		style_cache.clip_key_selected_fallback = clip_key_selected;
 
+		Ref<StyleBoxFlat> key_release_preview;
+		key_release_preview.instantiate();
+		key_release_preview->set_bg_color(Color(1.0f, 0.12f, 0.06f, 0.35f));
+		key_release_preview->set_border_width_all(2);
+		key_release_preview->set_border_color(Color(1.0f, 0.12f, 0.06f, 0.9f));
+		key_release_preview->set_corner_detail(4);
+		key_release_preview->set_corner_radius_all(4);
+		style_cache.key_release_preview_fallback = key_release_preview;
+
 		add_child(vscroll, false, INTERNAL_MODE_FRONT);
 	}
 
@@ -611,10 +632,10 @@ namespace godot {
 					else {
 						key_scale = key->get_instant_key_scale();
 					}
-					float pos_x = ct.x_offset - hscroll_value;
-					float pos_y = y - ct.width * 0.5f;
-					float width = ct.width * key_scale;
-					key_rect = Rect2(pos_x + width * 0.5f, pos_y + width * 0.5f, width, width);
+					float key_size = ct.width * key_scale;
+					float pos_x = ct.x_offset - hscroll_value + (ct.width - key_size) * 0.5f;
+					float pos_y = y - key_size * 0.5f;
+					key_rect = Rect2(pos_x, pos_y, key_size, key_size);
 				}
 				else {
 					if (y_end < y) {
@@ -628,6 +649,571 @@ namespace godot {
 				if (sel_rect.intersects(key_rect)) {
 					key->set_selected_no_signal(true);
 				}
+			}
+		}
+	}
+
+	bool VTimelinePanel::_find_selected_key_at_position(const Vector2& p_position, int& r_track_index, TimelineTrackKey*& r_key) const {
+		r_track_index = -1;
+		r_key = nullptr;
+
+		for (int i = static_cast<int>(_track_cache.size()) - 1; i >= 0; i--) {
+			const CachedTrack& ct = _track_cache[i];
+			if (ct.width <= 0.0f) continue;
+
+			for (auto it = ct.keys.rbegin(); it != ct.keys.rend(); ++it) {
+				TimelineTrackKey* key = *it;
+				if (!key || key->is_disabled()) continue;
+				if (!allow_unselected_key_edit && !key->is_selected()) continue;
+
+				Rect2 key_rect;
+				if (key->is_instant()) {
+					key_rect = _get_instant_key_rect(ct, key, _key_to_y(key));
+				}
+				else {
+					key_rect = _get_clip_key_rect(ct, _key_to_y(key), _key_end_to_y(key));
+				}
+
+				if (key_rect.has_point(p_position)) {
+					r_track_index = i;
+					r_key = key;
+					return true;
+				}
+			}
+		}
+
+		return false;
+	}
+
+	int VTimelinePanel::_get_track_index_at_x(float p_x) const {
+		int last_valid = -1;
+
+		for (int i = 0; i < static_cast<int>(_track_cache.size()); i++) {
+			const CachedTrack& ct = _track_cache[i];
+			if (ct.width <= 0.0f) continue;
+
+			const float left = ct.x_offset - hscroll_value;
+			const float right = left + ct.width;
+			if (p_x >= left && p_x <= right) {
+				return i;
+			}
+			if (p_x < left) {
+				return last_valid >= 0 ? last_valid : i;
+			}
+			last_valid = i;
+		}
+
+		return last_valid;
+	}
+
+	double VTimelinePanel::_position_to_key_value(double p_y) const {
+		if (counting_unit == FRAME) {
+			return static_cast<double>(_y_to_frame(p_y));
+		}
+		return _y_to_time(p_y);
+	}
+
+	bool VTimelinePanel::_find_clip_key_edge_at_position(const Vector2 &p_position, int &r_track_index, TimelineTrackKey *&r_key, ClipKeyEditEdge &r_edge) const {
+		r_track_index = -1;
+		r_key = nullptr;
+		r_edge = CLIP_KEY_EDIT_EDGE_NONE;
+
+		if (!clip_key_edge_edit_enabled || p_position.y <= header_height) {
+			return false;
+		}
+
+		const float edge_margin = 6.0f;
+		for (int i = static_cast<int>(_track_cache.size()) - 1; i >= 0; i--) {
+			const CachedTrack &ct = _track_cache[i];
+			if (ct.width <= 0.0f) continue;
+
+			for (auto it = ct.keys.rbegin(); it != ct.keys.rend(); ++it) {
+				TimelineTrackKey *key = *it;
+				if (!key || key->is_disabled() || key->is_instant()) continue;
+				if (!allow_unselected_key_edit && !key->is_selected()) continue;
+
+				const double head_y = _key_to_y(key);
+				const double tail_y = _key_end_to_y(key);
+				Rect2 key_rect = _get_clip_key_rect(ct, head_y, tail_y);
+				if (p_position.x < key_rect.position.x || p_position.x > key_rect.position.x + key_rect.size.x) continue;
+
+				const float head_distance = Math::abs(p_position.y - static_cast<float>(head_y));
+				const float tail_distance = Math::abs(p_position.y - static_cast<float>(tail_y));
+				const float nearest_distance = MIN(head_distance, tail_distance);
+				if (nearest_distance > edge_margin) continue;
+
+				r_track_index = i;
+				r_key = key;
+				r_edge = head_distance <= tail_distance ? CLIP_KEY_EDIT_EDGE_HEAD : CLIP_KEY_EDIT_EDGE_TAIL;
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	void VTimelinePanel::_update_clip_key_edge_cursor(const Vector2 &p_position) {
+		if (clip_key_edge_dragging) {
+			set_default_cursor_shape(Control::CURSOR_VSPLIT);
+			return;
+		}
+
+		int hit_track_index = -1;
+		TimelineTrackKey *hit_key = nullptr;
+		ClipKeyEditEdge hit_edge = CLIP_KEY_EDIT_EDGE_NONE;
+		if (_find_clip_key_edge_at_position(p_position, hit_track_index, hit_key, hit_edge)) {
+			set_default_cursor_shape(Control::CURSOR_VSPLIT);
+		}
+		else {
+			set_default_cursor_shape(Control::CURSOR_ARROW);
+		}
+	}
+
+	void VTimelinePanel::_begin_clip_key_edge_drag(TimelineTrackKey *p_key, ClipKeyEditEdge p_edge) {
+		if (!p_key || p_key->is_instant() || p_edge == CLIP_KEY_EDIT_EDGE_NONE) {
+			return;
+		}
+		if (!allow_unselected_key_edit && !p_key->is_selected()) {
+			return;
+		}
+
+		_cancel_drag();
+		selecting = false;
+		select_pending = false;
+		_clear_key_release_preview();
+		if (!p_key->is_selected()) {
+			for (CachedTrack &ct : _track_cache) {
+				for (TimelineTrackKey *key : ct.keys) {
+					if (key) {
+						key->set_selected_no_signal(false);
+					}
+				}
+			}
+			p_key->set_selected_no_signal(true);
+			queue_redraw();
+		}
+		clip_key_edge_dragging = true;
+		clip_key_edge_drag_moved = false;
+		clip_key_edge_drag_key = p_key;
+		clip_key_edge_drag_edge = p_edge;
+		clip_key_edge_drag_head_time = p_key->get_time();
+		clip_key_edge_drag_tail_time = p_key->get_time() + p_key->get_length();
+		resized_clip_keys.clear();
+
+		auto add_resized_key = [&](TimelineTrackKey *p_add_key) {
+			if (!p_add_key || p_add_key->is_disabled() || p_add_key->is_instant() || !p_add_key->is_selected()) {
+				return;
+			}
+
+			ResizedClipKey resized_key;
+			resized_key.key = p_add_key;
+			resized_key.original_head_time = p_add_key->get_time();
+			resized_key.original_tail_time = p_add_key->get_time() + p_add_key->get_length();
+			resized_clip_keys.push_back(resized_key);
+		};
+
+		add_resized_key(p_key);
+		for (CachedTrack &ct : _track_cache) {
+			for (TimelineTrackKey *key : ct.keys) {
+				if (key == p_key) continue;
+				add_resized_key(key);
+			}
+		}
+
+		set_default_cursor_shape(Control::CURSOR_VSPLIT);
+	}
+
+	void VTimelinePanel::_update_clip_key_edge_drag(const Vector2 &p_position) {
+		if (!clip_key_edge_dragging || !clip_key_edge_drag_key || resized_clip_keys.empty()) {
+			return;
+		}
+
+		double dragged_time = _position_to_key_value(p_position.y);
+		if (key_snap_enabled) {
+			dragged_time = _snap_key_time(dragged_time);
+		}
+
+		const double anchor_time = clip_key_edge_drag_edge == CLIP_KEY_EDIT_EDGE_HEAD ? clip_key_edge_drag_head_time : clip_key_edge_drag_tail_time;
+		const double edge_delta = dragged_time - anchor_time;
+		bool changed = false;
+
+		for (ResizedClipKey &resized_key : resized_clip_keys) {
+			if (!resized_key.key) continue;
+
+			const double fixed_time = clip_key_edge_drag_edge == CLIP_KEY_EDIT_EDGE_HEAD ? resized_key.original_tail_time : resized_key.original_head_time;
+			const double dragged_edge_time = clip_key_edge_drag_edge == CLIP_KEY_EDIT_EDGE_HEAD ? resized_key.original_head_time + edge_delta : resized_key.original_tail_time + edge_delta;
+			const double new_head_time = MIN(fixed_time, dragged_edge_time);
+			const double new_tail_time = MAX(fixed_time, dragged_edge_time);
+			const double new_length = new_tail_time - new_head_time;
+
+			if (!Math::is_equal_approx(resized_key.key->get_time(), new_head_time) || !Math::is_equal_approx(resized_key.key->get_length(), new_length)) {
+				changed = true;
+			}
+			resized_key.key->set_time_no_signal(new_head_time);
+			resized_key.key->set_length_no_signal(new_length);
+		}
+
+		if (!changed) {
+			return;
+		}
+
+		clip_key_edge_drag_moved = true;
+		_refresh_track_key_metrics();
+		std::vector<TimelineTrackKey *> resized_keys;
+		resized_keys.reserve(resized_clip_keys.size());
+		for (const ResizedClipKey &resized_key : resized_clip_keys) {
+			if (resized_key.key) {
+				resized_keys.push_back(resized_key.key);
+			}
+		}
+		_update_key_release_preview(resized_keys);
+		queue_redraw();
+	}
+
+	void VTimelinePanel::_finish_clip_key_edge_drag() {
+		if (!clip_key_edge_dragging) {
+			return;
+		}
+
+		std::vector<TimelineTrackKey *> resized_keys;
+		resized_keys.reserve(resized_clip_keys.size());
+		for (const ResizedClipKey &resized_key : resized_clip_keys) {
+			if (resized_key.key) {
+				resized_keys.push_back(resized_key.key);
+			}
+		}
+		const bool was_moved = clip_key_edge_drag_moved;
+		clip_key_edge_dragging = false;
+		clip_key_edge_drag_moved = false;
+		clip_key_edge_drag_key = nullptr;
+		clip_key_edge_drag_edge = CLIP_KEY_EDIT_EDGE_NONE;
+		resized_clip_keys.clear();
+
+		if (was_moved) {
+			_destroy_moved_key_overlaps(resized_keys);
+		}
+		_clear_key_release_preview();
+		_refresh_track_key_metrics();
+		queue_redraw();
+	}
+
+	void VTimelinePanel::_begin_key_drag(int p_track_index, TimelineTrackKey* p_key, const Vector2& p_position) {
+		if (!p_key || p_track_index < 0 || p_track_index >= static_cast<int>(_track_cache.size())) {
+			return;
+		}
+		if (!allow_unselected_key_edit && !p_key->is_selected()) {
+			return;
+		}
+
+		_cancel_drag();
+		selecting = false;
+		select_pending = false;
+		_clear_key_release_preview();
+		if (!p_key->is_selected()) {
+			for (CachedTrack &ct : _track_cache) {
+				for (TimelineTrackKey *key : ct.keys) {
+					if (key) {
+						key->set_selected_no_signal(false);
+					}
+				}
+			}
+			p_key->set_selected_no_signal(true);
+			queue_redraw();
+		}
+		key_dragging = true;
+		key_drag_moved = false;
+		key_drag_start_value = _position_to_key_value(p_position.y);
+		key_drag_anchor_track = p_track_index;
+		dragged_keys.clear();
+
+		for (int i = 0; i < static_cast<int>(_track_cache.size()); i++) {
+			CachedTrack& ct = _track_cache[i];
+			for (TimelineTrackKey* key : ct.keys) {
+				if (!key || key->is_disabled() || !key->is_selected()) continue;
+
+				DraggedKey dragged_key;
+				dragged_key.key = key;
+				dragged_key.original_track_index = i;
+				dragged_key.current_track_index = i;
+				dragged_key.original_time = key->get_time();
+				dragged_keys.push_back(dragged_key);
+			}
+		}
+
+		if (dragged_keys.empty()) {
+			DraggedKey dragged_key;
+			dragged_key.key = p_key;
+			dragged_key.original_track_index = p_track_index;
+			dragged_key.current_track_index = p_track_index;
+			dragged_key.original_time = p_key->get_time();
+			dragged_keys.push_back(dragged_key);
+		}
+	}
+
+	void VTimelinePanel::_update_key_drag(const Vector2& p_position) {
+		if (!key_dragging || dragged_keys.empty()) {
+			return;
+		}
+
+		const double current_value = _position_to_key_value(p_position.y);
+		const double value_delta = current_value - key_drag_start_value;
+		const int target_anchor_track = allow_key_cross_track_move ? _get_track_index_at_x(p_position.x) : key_drag_anchor_track;
+		const int track_delta = target_anchor_track >= 0 && key_drag_anchor_track >= 0 ? target_anchor_track - key_drag_anchor_track : 0;
+		const double max_value = counting_unit == FRAME ? duration * fps : duration;
+
+		if (Math::abs(value_delta) <= 0.000001 && track_delta == 0) {
+			return;
+		}
+
+		bool changed = false;
+		for (DraggedKey& dragged_key : dragged_keys) {
+			if (!dragged_key.key) continue;
+
+			int target_track = dragged_key.original_track_index;
+			if (allow_key_cross_track_move) {
+				target_track = CLAMP(dragged_key.original_track_index + track_delta, 0, static_cast<int>(_track_cache.size()) - 1);
+			}
+
+			if (target_track != dragged_key.current_track_index) {
+				_move_key_to_track(dragged_key.key, dragged_key.current_track_index, target_track);
+				dragged_key.current_track_index = target_track;
+				changed = true;
+			}
+
+			double target_time = dragged_key.original_time + value_delta;
+			if (key_snap_enabled) {
+				target_time = _snap_key_time(target_time);
+			}
+			target_time = CLAMP(target_time, 0.0, max_value);
+			if (!Math::is_equal_approx(dragged_key.key->get_time(), target_time)) {
+				changed = true;
+			}
+			dragged_key.key->set_time_no_signal(target_time);
+		}
+
+		if (!changed) {
+			return;
+		}
+		key_drag_moved = true;
+		_refresh_track_key_metrics();
+		std::vector<TimelineTrackKey *> moved_keys;
+		moved_keys.reserve(dragged_keys.size());
+		for (const DraggedKey &dragged_key : dragged_keys) {
+			if (dragged_key.key) {
+				moved_keys.push_back(dragged_key.key);
+			}
+		}
+		_update_key_release_preview(moved_keys);
+		queue_redraw();
+	}
+
+	void VTimelinePanel::_finish_key_drag() {
+		if (!key_dragging) {
+			return;
+		}
+
+		std::vector<TimelineTrackKey*> moved_keys;
+		moved_keys.reserve(dragged_keys.size());
+		for (const DraggedKey& dragged_key : dragged_keys) {
+			if (dragged_key.key) {
+				moved_keys.push_back(dragged_key.key);
+			}
+		}
+
+		key_dragging = false;
+		key_drag_anchor_track = -1;
+		dragged_keys.clear();
+
+		if (key_drag_moved) {
+			_destroy_moved_key_overlaps(moved_keys);
+		}
+		_clear_key_release_preview();
+		key_drag_moved = false;
+		_refresh_track_key_metrics();
+		queue_redraw();
+	}
+
+	void VTimelinePanel::_move_key_to_track(TimelineTrackKey* p_key, int p_from_track, int p_to_track) {
+		if (!p_key || p_to_track < 0 || p_to_track >= static_cast<int>(_track_cache.size()) || p_from_track == p_to_track) {
+			return;
+		}
+
+		if (p_from_track < 0 || p_from_track >= static_cast<int>(_track_cache.size())) {
+			for (int i = 0; i < static_cast<int>(_track_cache.size()); i++) {
+				auto it = std::find(_track_cache[i].keys.begin(), _track_cache[i].keys.end(), p_key);
+				if (it != _track_cache[i].keys.end()) {
+					p_from_track = i;
+					break;
+				}
+			}
+		}
+		if (p_from_track < 0 || p_from_track >= static_cast<int>(_track_cache.size())) {
+			return;
+		}
+
+		std::vector<TimelineTrackKey*>& from_keys = _track_cache[p_from_track].keys;
+		auto it = std::find(from_keys.begin(), from_keys.end(), p_key);
+		if (it == from_keys.end()) {
+			return;
+		}
+
+		from_keys.erase(it);
+		_track_cache[p_to_track].keys.push_back(p_key);
+	}
+
+	double VTimelinePanel::_snap_key_time(double p_time) const {
+		switch (counting_unit) {
+		case FRAME:
+			return Math::floor(p_time + 0.5);
+		case BEAT: {
+			if (beat_map.is_empty() || time_map.is_empty()) {
+				return p_time;
+			}
+			const int divisions = MAX(beats_per_bar, 1);
+			const double beat = _time_to_beat(p_time);
+			const double snapped_beat = Math::floor(beat * divisions + 0.5) / divisions;
+			return _beat_to_time(snapped_beat);
+		}
+		case TIME:
+		default: {
+			double time_interval = 1.0;
+			if (scale >= 64.0f) time_interval = 0.1;
+			else if (scale >= 32.0f) time_interval = 0.5;
+			else if (scale >= 16.0f) time_interval = 1.0;
+			else if (scale >= 8.0f) time_interval = 5.0;
+			else time_interval = 10.0;
+
+			return Math::floor(p_time / time_interval + 0.5) * time_interval;
+		}
+		}
+	}
+
+	bool VTimelinePanel::_keys_overlap(const TimelineTrackKey* p_a, const TimelineTrackKey* p_b) const {
+		if (!p_a || !p_b || p_a == p_b) {
+			return false;
+		}
+
+		const double epsilon = 0.000001;
+		const double a_start = p_a->get_time();
+		const double b_start = p_b->get_time();
+		const double a_length = MAX(p_a->get_length(), 0.0);
+		const double b_length = MAX(p_b->get_length(), 0.0);
+		const bool a_instant = a_length <= epsilon;
+		const bool b_instant = b_length <= epsilon;
+
+		if (a_instant && b_instant) {
+			return Math::abs(a_start - b_start) <= epsilon;
+		}
+
+		const double a_end = a_start + a_length;
+		const double b_end = b_start + b_length;
+		if (a_instant) {
+			return a_start >= b_start - epsilon && a_start < b_end - epsilon;
+		}
+		if (b_instant) {
+			return b_start >= a_start - epsilon && b_start < a_end - epsilon;
+		}
+
+		return a_start < b_end - epsilon && b_start < a_end - epsilon;
+	}
+
+	std::vector<TimelineTrackKey *> VTimelinePanel::_get_moved_key_overlaps(const std::vector<TimelineTrackKey *> &p_moved_keys) const {
+		std::vector<TimelineTrackKey *> destroy_keys;
+		std::vector<TimelineTrackKey *> kept_moved_keys;
+		std::unordered_set<TimelineTrackKey *> moved_key_set;
+		std::unordered_set<TimelineTrackKey *> destroy_key_set;
+
+		moved_key_set.reserve(p_moved_keys.size());
+		destroy_key_set.reserve(p_moved_keys.size());
+		for (TimelineTrackKey *moved_key : p_moved_keys) {
+			if (moved_key) {
+				moved_key_set.insert(moved_key);
+			}
+		}
+
+		auto mark_destroy = [&](TimelineTrackKey *p_key) {
+			if (destroy_key_set.insert(p_key).second) {
+				destroy_keys.push_back(p_key);
+			}
+		};
+
+		for (TimelineTrackKey *moved_key : p_moved_keys) {
+			if (!moved_key) continue;
+			if (destroy_key_set.find(moved_key) != destroy_key_set.end()) continue;
+
+			const CachedTrack *moved_track = nullptr;
+			for (const CachedTrack &ct : _track_cache) {
+				if (std::find(ct.keys.begin(), ct.keys.end(), moved_key) == ct.keys.end()) {
+					continue;
+				}
+				moved_track = &ct;
+				break;
+			}
+			if (moved_track == nullptr) {
+				continue;
+			}
+
+			bool should_destroy = false;
+			for (TimelineTrackKey *other_key : moved_track->keys) {
+				if (!other_key || other_key->is_disabled() || other_key == moved_key) continue;
+				if (moved_key_set.find(other_key) != moved_key_set.end()) continue;
+
+				if (_keys_overlap(moved_key, other_key)) {
+					should_destroy = true;
+					break;
+				}
+			}
+
+			if (!should_destroy) {
+				for (TimelineTrackKey *kept_key : kept_moved_keys) {
+					if (!kept_key) continue;
+					if (destroy_key_set.find(kept_key) != destroy_key_set.end()) continue;
+					if (std::find(moved_track->keys.begin(), moved_track->keys.end(), kept_key) == moved_track->keys.end()) continue;
+
+					if (_keys_overlap(moved_key, kept_key)) {
+						should_destroy = true;
+						break;
+					}
+				}
+			}
+
+			if (should_destroy) {
+				mark_destroy(moved_key);
+			}
+			else {
+				kept_moved_keys.push_back(moved_key);
+			}
+		}
+
+		return destroy_keys;
+	}
+
+	void VTimelinePanel::_update_key_release_preview(const std::vector<TimelineTrackKey *> &p_moved_keys) {
+		key_release_preview_keys.clear();
+		for (TimelineTrackKey *destroy_key : _get_moved_key_overlaps(p_moved_keys)) {
+			key_release_preview_keys.insert(destroy_key);
+		}
+	}
+
+	void VTimelinePanel::_clear_key_release_preview() {
+		key_release_preview_keys.clear();
+	}
+
+	bool VTimelinePanel::_is_key_release_previewed(const TimelineTrackKey *p_key) const {
+		return p_key && key_release_preview_keys.find(p_key) != key_release_preview_keys.end();
+	}
+
+	void VTimelinePanel::_destroy_moved_key_overlaps(const std::vector<TimelineTrackKey*>& p_moved_keys) {
+		std::vector<TimelineTrackKey *> destroy_keys = _get_moved_key_overlaps(p_moved_keys);
+
+		for (TimelineTrackKey *destroy_key : destroy_keys) {
+			for (CachedTrack &ct : _track_cache) {
+				auto it = std::find(ct.keys.begin(), ct.keys.end(), destroy_key);
+				if (it == ct.keys.end()) continue;
+
+				ct.keys.erase(it);
+				memdelete(destroy_key);
+				break;
 			}
 		}
 	}
@@ -964,7 +1550,156 @@ namespace godot {
 		return static_cast<int64_t>(frame);
 	}
 
+	void VTimelinePanel::_refresh_track_key_metrics() {
+		for (CachedTrack& ct : _track_cache) {
+			std::sort(ct.keys.begin(), ct.keys.end(), [](TimelineTrackKey* p_a, TimelineTrackKey* p_b) {
+				if (p_a == p_b) return false;
+				if (p_a == nullptr) return false;
+				if (p_b == nullptr) return true;
+				return p_a->get_time() < p_b->get_time();
+				});
+
+			ct.max_key_length = 0.0;
+			ct.max_instant_key_scale = 0.4f;
+
+			for (TimelineTrackKey* key : ct.keys) {
+				if (!key) continue;
+
+				if (key->is_instant()) {
+					ct.max_instant_key_scale = MAX(ct.max_instant_key_scale, _get_instant_key_scale(key));
+				}
+				else {
+					ct.max_key_length = MAX(ct.max_key_length, key->get_length());
+				}
+			}
+		}
+	}
+
+	void VTimelinePanel::_get_visible_key_time_range(float p_y_margin, double& r_start, double& r_end) const {
+		const double y_start = header_height - p_y_margin;
+		const double y_end = get_size().y + p_y_margin;
+		double a = 0.0;
+		double b = 0.0;
+
+		switch (counting_unit) {
+		case FRAME:
+			a = static_cast<double>(_y_to_frame(y_start));
+			b = static_cast<double>(_y_to_frame(y_end));
+			break;
+		case BEAT:
+		case TIME:
+		default:
+			a = _y_to_time(y_start);
+			b = _y_to_time(y_end);
+			break;
+		}
+
+		r_start = MIN(a, b);
+		r_end = MAX(a, b);
+		if (counting_unit == FRAME) {
+			r_start = MAX(0.0, r_start - 1.0);
+			r_end += 1.0;
+		}
+	}
+
+	double VTimelinePanel::_key_to_y(const TimelineTrackKey* p_key) const {
+		if (!p_key) return header_height;
+
+		switch (counting_unit) {
+		case FRAME:
+			return _frame_to_y(static_cast<int64_t>(p_key->get_time()));
+		case BEAT:
+		case TIME:
+		default:
+			return _time_to_y(p_key->get_time());
+		}
+	}
+
+	double VTimelinePanel::_key_end_to_y(const TimelineTrackKey* p_key) const {
+		if (!p_key) return header_height;
+
+		switch (counting_unit) {
+		case FRAME:
+			return _frame_to_y(static_cast<int64_t>(p_key->get_time() + p_key->get_length()));
+		case BEAT:
+		case TIME:
+		default:
+			return _time_to_y(p_key->get_time() + p_key->get_length());
+		}
+	}
+
+	float VTimelinePanel::_get_instant_key_scale(const TimelineTrackKey* p_key) const {
+		if (style_cache.instant_key_scale != 0.4f) {
+			return style_cache.instant_key_scale;
+		}
+		return p_key ? p_key->get_instant_key_scale() : 0.4f;
+	}
+
+	Rect2 VTimelinePanel::_get_instant_key_rect(const CachedTrack& p_track, const TimelineTrackKey* p_key, double p_y) const {
+		float key_size = p_track.width * _get_instant_key_scale(p_key);
+		float pos_x = p_track.x_offset - hscroll_value + (p_track.width - key_size) * 0.5f;
+		float pos_y = static_cast<float>(p_y) - key_size * 0.5f;
+		return Rect2(pos_x, pos_y, key_size, key_size);
+	}
+
+	Rect2 VTimelinePanel::_get_clip_key_rect(const CachedTrack& p_track, double p_y, double p_y_end) const {
+		float y = static_cast<float>(p_y);
+		float y_end = static_cast<float>(p_y_end);
+		if (y_end < y) {
+			return Rect2(p_track.x_offset - hscroll_value, y_end, p_track.width, y - y_end);
+		}
+		return Rect2(p_track.x_offset - hscroll_value, y, p_track.width, y_end - y);
+	}
+
+	Ref<StyleBox> VTimelinePanel::_get_instant_key_normal_style(const TimelineTrackKey *p_key) const {
+		if (p_key && p_key->get_instant_key_normal_style().is_valid()) {
+			return p_key->get_instant_key_normal_style();
+		}
+		if (style_cache.instant_key_normal.is_valid()) {
+			return style_cache.instant_key_normal;
+		}
+		return style_cache.instant_key_normal_fallback;
+	}
+
+	Ref<StyleBox> VTimelinePanel::_get_instant_key_selected_style(const TimelineTrackKey *p_key) const {
+		if (p_key && p_key->get_instant_key_selected_style().is_valid()) {
+			return p_key->get_instant_key_selected_style();
+		}
+		if (style_cache.instant_key_selected.is_valid()) {
+			return style_cache.instant_key_selected;
+		}
+		return style_cache.instant_key_selected_fallback;
+	}
+
+	Ref<StyleBox> VTimelinePanel::_get_clip_key_normal_style(const TimelineTrackKey *p_key) const {
+		if (p_key && p_key->get_clip_key_normal_style().is_valid()) {
+			return p_key->get_clip_key_normal_style();
+		}
+		if (style_cache.clip_key_normal.is_valid()) {
+			return style_cache.clip_key_normal;
+		}
+		return style_cache.clip_key_normal_fallback;
+	}
+
+	Ref<StyleBox> VTimelinePanel::_get_clip_key_selected_style(const TimelineTrackKey *p_key) const {
+		if (p_key && p_key->get_clip_key_selected_style().is_valid()) {
+			return p_key->get_clip_key_selected_style();
+		}
+		if (style_cache.clip_key_selected.is_valid()) {
+			return style_cache.clip_key_selected;
+		}
+		return style_cache.clip_key_selected_fallback;
+	}
+
+	Ref<StyleBox> VTimelinePanel::_get_key_release_preview_style() const {
+		if (style_cache.key_release_preview.is_valid()) {
+			return style_cache.key_release_preview;
+		}
+		return style_cache.key_release_preview_fallback;
+	}
+
 	void VTimelinePanel::_on_resource_changed() {
+		_refresh_track_key_metrics();
 		queue_redraw();
 		update_minimum_size();
 	}
@@ -1496,6 +2231,40 @@ namespace godot {
 				}
 			}
 
+			if (mb->get_button_index() == MouseButton::MOUSE_BUTTON_LEFT) {
+				if (!mb->is_pressed() && clip_key_edge_dragging) {
+					_finish_clip_key_edge_drag();
+					_update_clip_key_edge_cursor(mb->get_position());
+					accept_event();
+					return;
+				}
+
+				if (!mb->is_pressed() && key_dragging) {
+					_finish_key_drag();
+					accept_event();
+					return;
+				}
+
+				if (mb->is_pressed() && mb->get_position().y > header_height) {
+					int edge_track_index = -1;
+					TimelineTrackKey *edge_key = nullptr;
+					ClipKeyEditEdge edge = CLIP_KEY_EDIT_EDGE_NONE;
+					if (_find_clip_key_edge_at_position(mb->get_position(), edge_track_index, edge_key, edge)) {
+						_begin_clip_key_edge_drag(edge_key, edge);
+						accept_event();
+						return;
+					}
+
+					int hit_track_index = -1;
+					TimelineTrackKey* hit_key = nullptr;
+					if (_find_selected_key_at_position(mb->get_position(), hit_track_index, hit_key)) {
+						_begin_key_drag(hit_track_index, hit_key, mb->get_position());
+						accept_event();
+						return;
+					}
+				}
+			}
+
 			bool is_touchscreen_available = DisplayServer::get_singleton()->is_touchscreen_available();
 			if (mb->get_button_index() == MouseButton::MOUSE_BUTTON_LEFT) {
 				if (!is_touchscreen_available) {
@@ -1620,6 +2389,18 @@ namespace godot {
 		Ref<InputEventMouseMotion> mm = p_gui_input;
 
 		if (mm.is_valid()) {
+			if (clip_key_edge_dragging) {
+				_update_clip_key_edge_drag(mm->get_position());
+				accept_event();
+				return;
+			}
+
+			if (key_dragging) {
+				_update_key_drag(mm->get_position());
+				accept_event();
+				return;
+			}
+
 			if (playhead_dragging) {
 				double new_time = get_time_from_position(mm->get_position().y);
 				set_current_time(new_time);
@@ -1641,6 +2422,10 @@ namespace godot {
 					select_end = mm->get_position();
 					queue_redraw();
 				}
+			}
+
+			if (!playhead_dragging && !selecting && !select_pending && !drag_touching) {
+				_update_clip_key_edge_cursor(mm->get_position());
 			}
 
 			if (drag_touching && !drag_touching_deaccel) {
@@ -1721,23 +2506,36 @@ namespace godot {
 		return String();
 	}
 
-	TimelineTrackKey* VTimelinePanel::create_key(int p_track_index, double p_time, double p_length) {
+	TimelineTrackKey *VTimelinePanel::create_key(int p_track_index, double p_time, double p_length, bool p_snap) {
 		ERR_FAIL_INDEX_V(p_track_index, static_cast<int>(_track_cache.size()), nullptr);
 
-		TimelineTrackKey* key = memnew(TimelineTrackKey);
-		key->set_time(p_time);
+		auto &ct = _track_cache[p_track_index];
+		auto &keys = ct.keys;
+		const double target_time = p_snap ? _snap_key_time(p_time) : p_time;
+		TimelineTrackKey *key = memnew(TimelineTrackKey);
+		key->set_time(target_time);
 		key->set_length(p_length);
+
+		for (TimelineTrackKey *other_key : keys) {
+			if (!other_key || other_key->is_disabled()) continue;
+			if (_keys_overlap(key, other_key)) {
+				memdelete(key);
+				return nullptr;
+			}
+		}
+
 		key->connect("changed", callable_mp(this, &VTimelinePanel::_on_resource_changed));
 
 		// 有序插入
-		auto& ct = _track_cache[p_track_index];
-		auto& keys = ct.keys;
-		auto it = std::lower_bound(keys.begin(), keys.end(), p_time,
-			[](TimelineTrackKey* k, double time) { return k->get_time() < time; });
+		auto it = std::lower_bound(keys.begin(), keys.end(), target_time,
+			[](TimelineTrackKey *k, double time) { return k->get_time() < time; });
 		keys.insert(it, key);
 
 		if (p_length > ct.max_key_length) {
 			ct.max_key_length = p_length;
+		}
+		if (p_length <= 0.0) {
+			ct.max_instant_key_scale = MAX(ct.max_instant_key_scale, _get_instant_key_scale(key));
 		}
 
 		queue_redraw();
@@ -1746,6 +2544,7 @@ namespace godot {
 
 	void VTimelinePanel::remove_key(int p_track_index, int p_key_index) {
 		ERR_FAIL_INDEX(p_track_index, static_cast<int>(_track_cache.size()));
+		_clear_key_release_preview();
 		auto& ct = _track_cache[p_track_index];
 		auto& keys = ct.keys;
 		ERR_FAIL_INDEX(p_key_index, static_cast<int>(keys.size()));
@@ -1765,11 +2564,13 @@ namespace godot {
 				}
 			}
 		}
+		_refresh_track_key_metrics();
 		queue_redraw();
 	}
 
 	void VTimelinePanel::clear_track_keys(int p_track_index) {
 		ERR_FAIL_INDEX(p_track_index, static_cast<int>(_track_cache.size()));
+		_clear_key_release_preview();
 		auto& keys = _track_cache[p_track_index].keys;
 		for (TimelineTrackKey* key : keys) {
 			if (key) {
@@ -1778,10 +2579,12 @@ namespace godot {
 		}
 		keys.clear();
 		_track_cache[p_track_index].max_key_length = 0.0;
+		_track_cache[p_track_index].max_instant_key_scale = 0.4f;
 		queue_redraw();
 	}
 
 	void VTimelinePanel::clear_all_keys() {
+		_clear_key_release_preview();
 		for (auto& ct : _track_cache) {
 			for (TimelineTrackKey* key : ct.keys) {
 				if (key) {
@@ -1790,6 +2593,7 @@ namespace godot {
 			}
 			ct.keys.clear();
 			ct.max_key_length = 0.0;
+			ct.max_instant_key_scale = 0.4f;
 		}
 		queue_redraw();
 	}
@@ -2194,6 +2998,7 @@ namespace godot {
 
 	void VTimelinePanel::set_instant_key_scale(const float p_scale) {
 		style_cache.instant_key_scale = p_scale;
+		_refresh_track_key_metrics();
 		queue_redraw();
 	}
 
@@ -2244,5 +3049,49 @@ namespace godot {
 
 	Ref<StyleBox> VTimelinePanel::get_selection_rect_style() const {
 		return style_cache.selection_rect;
+	}
+
+	void VTimelinePanel::set_key_release_preview_style(Ref<StyleBox> p_style) {
+		style_cache.key_release_preview = p_style;
+		queue_redraw();
+	}
+
+	Ref<StyleBox> VTimelinePanel::get_key_release_preview_style() const {
+		return style_cache.key_release_preview;
+	}
+
+	void VTimelinePanel::set_allow_key_cross_track_move(bool p_enabled) {
+		allow_key_cross_track_move = p_enabled;
+	}
+
+	bool VTimelinePanel::get_allow_key_cross_track_move() const {
+		return allow_key_cross_track_move;
+	}
+
+	void VTimelinePanel::set_key_snap_enabled(bool p_enabled) {
+		key_snap_enabled = p_enabled;
+	}
+
+	bool VTimelinePanel::get_key_snap_enabled() const {
+		return key_snap_enabled;
+	}
+
+	void VTimelinePanel::set_clip_key_edge_edit_enabled(bool p_enabled) {
+		clip_key_edge_edit_enabled = p_enabled;
+		if (!clip_key_edge_edit_enabled && !clip_key_edge_dragging) {
+			set_default_cursor_shape(Control::CURSOR_ARROW);
+		}
+	}
+
+	bool VTimelinePanel::get_clip_key_edge_edit_enabled() const {
+		return clip_key_edge_edit_enabled;
+	}
+
+	void VTimelinePanel::set_allow_unselected_key_edit(bool p_enabled) {
+		allow_unselected_key_edit = p_enabled;
+	}
+
+	bool VTimelinePanel::get_allow_unselected_key_edit() const {
+		return allow_unselected_key_edit;
 	}
 }

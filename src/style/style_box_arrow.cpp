@@ -1,52 +1,170 @@
 #include "style_box_arrow.h"
 
 #include <godot_cpp/classes/engine.hpp>
-#include <godot_cpp/classes/text_server.hpp>
 #include <godot_cpp/classes/rendering_server.hpp>
 
 namespace godot {
-	// 辅助函数的前向声明
+	// Helper function declarations.
 	inline void adapt_values(int p_index_a, int p_index_b, real_t* adapted_values, const real_t* p_values, const real_t p_width, const real_t p_max_a, const real_t p_max_b);
 	inline void set_inner_corner_radius(const Rect2 style_rect, const Rect2 inner_rect, const real_t corner_radius[4], real_t* inner_corner_radius);
-	inline void set_corner_scale(const Rect2& style_rect, const Rect2& inner_rect, const real_t corner_radius[4], Point2* inner_scale);
-	inline void draw_rounded_rectangle(PackedVector2Array& verts, PackedInt32Array& indices, PackedColorArray& colors, const Rect2& style_rect, const real_t corner_radius[4],
-		const Rect2& ring_rect, const Rect2& inner_rect, const Color& inner_color, const Color& outer_color, const int corner_detail, const Vector2& skew, bool is_filled = false);
-
-	// 向网格中添加三角形的辅助函数
-	inline void add_triangle(PackedVector2Array& verts, PackedInt32Array& indices, PackedColorArray& colors, const Point2& p_a, const Point2& p_b, const Point2& p_c, const Color& p_color) {
-		int base = verts.size();
-		verts.push_back(p_a);
-		verts.push_back(p_b);
-		verts.push_back(p_c);
-		indices.push_back(base);
-		indices.push_back(base + 1);
-		indices.push_back(base + 2);
-		colors.push_back(p_color);
-		colors.push_back(p_color);
-		colors.push_back(p_color);
+	inline Rect2 offset_rect(const Rect2& p_rect, const Vector2& p_offset) {
+		Rect2 rect = p_rect;
+		rect.position += p_offset;
+		return rect;
 	}
 
-	// 向网格中添加四边形的辅助函数
-	inline void add_quad(PackedVector2Array& verts, PackedInt32Array& indices, PackedColorArray& colors, const Point2& p_a, const Point2& p_b, const Point2& p_c, const Point2& p_d, const Color& p_color) {
-		int base = verts.size();
-		verts.push_back(p_a);
-		verts.push_back(p_b);
-		verts.push_back(p_c);
-		verts.push_back(p_d);
-		// Triangle 1: A-B-C
-		indices.push_back(base);
-		indices.push_back(base + 1);
-		indices.push_back(base + 2);
-		// Triangle 2: A-C-D
-		indices.push_back(base);
-		indices.push_back(base + 2);
-		indices.push_back(base + 3);
-		colors.push_back(p_color);
-		colors.push_back(p_color);
-		colors.push_back(p_color);
-		colors.push_back(p_color);
+	inline Point2 skew_point(const Point2& p_point, const Rect2& p_skew_rect, const Vector2& p_skew) {
+		const Point2 center = p_skew_rect.get_center();
+		const real_t x_skew = -p_skew.x * (p_point.y - center.y);
+		const real_t y_skew = -p_skew.y * (p_point.x - center.x);
+		return Point2(p_point.x + x_skew, p_point.y + y_skew);
 	}
 
+	inline void append_skewed_point(Vector<Point2>& r_points, const Point2& p_point, const Rect2& p_skew_rect, const Vector2& p_skew) {
+		r_points.push_back(skew_point(p_point, p_skew_rect, p_skew));
+	}
+
+	inline void append_arc(Vector<Point2>& r_points, const Point2& p_center, real_t p_radius_x, real_t p_radius_y,
+		real_t p_from_angle, real_t p_to_angle, int p_detail, const Rect2& p_skew_rect, const Vector2& p_skew) {
+		const int detail = MAX(p_detail, 1);
+		for (int i = 0; i <= detail; i++) {
+			const real_t weight = (real_t)i / (real_t)detail;
+			const real_t angle = p_from_angle + (p_to_angle - p_from_angle) * weight;
+			append_skewed_point(r_points, Point2(p_center.x + Math::cos(angle) * p_radius_x, p_center.y + Math::sin(angle) * p_radius_y), p_skew_rect, p_skew);
+		}
+	}
+
+	inline void fit_corner_pair(real_t& r_a, real_t& r_b, real_t p_limit) {
+		const real_t sum = r_a + r_b;
+		if (sum > p_limit && sum > 0) {
+			const real_t scale = MAX(p_limit, 0) / sum;
+			r_a *= scale;
+			r_b *= scale;
+		}
+	}
+
+	inline void scale_corner_radius(const Rect2& p_rect, const real_t p_corner_radius[4], real_t* r_scaled_corner_radius) {
+		for (int i = 0; i < 4; i++) {
+			r_scaled_corner_radius[i] = MAX(p_corner_radius[i], 0);
+		}
+
+		fit_corner_pair(r_scaled_corner_radius[CORNER_TOP_LEFT], r_scaled_corner_radius[CORNER_TOP_RIGHT], p_rect.size.width);
+		fit_corner_pair(r_scaled_corner_radius[CORNER_BOTTOM_LEFT], r_scaled_corner_radius[CORNER_BOTTOM_RIGHT], p_rect.size.width);
+		fit_corner_pair(r_scaled_corner_radius[CORNER_TOP_LEFT], r_scaled_corner_radius[CORNER_BOTTOM_LEFT], p_rect.size.height);
+		fit_corner_pair(r_scaled_corner_radius[CORNER_TOP_RIGHT], r_scaled_corner_radius[CORNER_BOTTOM_RIGHT], p_rect.size.height);
+	}
+
+	inline void append_edge_with_arrow(Vector<Point2>& r_points, const Point2& p_base_from, const Point2& p_base_to, const Point2& p_tip,
+		bool p_has_arrow, const Rect2& p_skew_rect, const Vector2& p_skew) {
+		append_skewed_point(r_points, p_base_from, p_skew_rect, p_skew);
+		if (p_has_arrow) {
+			append_skewed_point(r_points, p_tip, p_skew_rect, p_skew);
+		}
+		append_skewed_point(r_points, p_base_to, p_skew_rect, p_skew);
+	}
+
+	inline void build_arrow_outline(Vector<Point2>& r_outline, const Rect2& p_rect, const real_t p_corner_radius[4], Side p_arrow_side,
+		real_t p_arrow_width, bool p_has_arrow, int p_corner_detail, const Rect2& p_skew_rect, const Vector2& p_skew) {
+		r_outline.clear();
+
+		real_t radius[4];
+		scale_corner_radius(p_rect, p_corner_radius, radius);
+
+		const real_t left = p_rect.position.x;
+		const real_t top = p_rect.position.y;
+		const real_t right = p_rect.position.x + p_rect.size.x;
+		const real_t bottom = p_rect.position.y + p_rect.size.y;
+		const real_t center_x = p_rect.position.x + p_rect.size.x * 0.5;
+		const real_t center_y = p_rect.position.y + p_rect.size.y * 0.5;
+		const real_t depth = MAX(p_arrow_width, 0);
+		const bool has_arrow = p_has_arrow && depth > 0;
+
+		const Point2 top_left_center(left + radius[CORNER_TOP_LEFT], top + radius[CORNER_TOP_LEFT]);
+		const Point2 top_right_center(right - radius[CORNER_TOP_RIGHT], top + radius[CORNER_TOP_RIGHT]);
+		const Point2 bottom_right_center(right - radius[CORNER_BOTTOM_RIGHT], bottom - radius[CORNER_BOTTOM_RIGHT]);
+		const Point2 bottom_left_center(left + radius[CORNER_BOTTOM_LEFT], bottom - radius[CORNER_BOTTOM_LEFT]);
+
+		append_edge_with_arrow(r_outline,
+			Point2(left + radius[CORNER_TOP_LEFT], top),
+			Point2(right - radius[CORNER_TOP_RIGHT], top),
+			Point2(center_x, top - depth),
+			has_arrow && p_arrow_side == SIDE_TOP, p_skew_rect, p_skew);
+		append_arc(r_outline, top_right_center, radius[CORNER_TOP_RIGHT], radius[CORNER_TOP_RIGHT], Math_PI * 1.5, Math_PI * 2.0, p_corner_detail, p_skew_rect, p_skew);
+
+		append_edge_with_arrow(r_outline,
+			Point2(right, top + radius[CORNER_TOP_RIGHT]),
+			Point2(right, bottom - radius[CORNER_BOTTOM_RIGHT]),
+			Point2(right + depth, center_y),
+			has_arrow && p_arrow_side == SIDE_RIGHT, p_skew_rect, p_skew);
+		append_arc(r_outline, bottom_right_center, radius[CORNER_BOTTOM_RIGHT], radius[CORNER_BOTTOM_RIGHT], 0, Math_PI * 0.5, p_corner_detail, p_skew_rect, p_skew);
+
+		append_edge_with_arrow(r_outline,
+			Point2(right - radius[CORNER_BOTTOM_RIGHT], bottom),
+			Point2(left + radius[CORNER_BOTTOM_LEFT], bottom),
+			Point2(center_x, bottom + depth),
+			has_arrow && p_arrow_side == SIDE_BOTTOM, p_skew_rect, p_skew);
+		append_arc(r_outline, bottom_left_center, radius[CORNER_BOTTOM_LEFT], radius[CORNER_BOTTOM_LEFT], Math_PI * 0.5, Math_PI, p_corner_detail, p_skew_rect, p_skew);
+
+		append_edge_with_arrow(r_outline,
+			Point2(left, bottom - radius[CORNER_BOTTOM_LEFT]),
+			Point2(left, top + radius[CORNER_TOP_LEFT]),
+			Point2(left - depth, center_y),
+			has_arrow && p_arrow_side == SIDE_LEFT, p_skew_rect, p_skew);
+		append_arc(r_outline, top_left_center, radius[CORNER_TOP_LEFT], radius[CORNER_TOP_LEFT], Math_PI, Math_PI * 1.5, p_corner_detail, p_skew_rect, p_skew);
+	}
+
+	inline void draw_shape_fill(PackedVector2Array& r_verts, PackedInt32Array& r_indices, PackedColorArray& r_colors,
+		const Vector<Point2>& p_outline, const Point2& p_center, const Color& p_color) {
+		const int outline_size = p_outline.size();
+		if (outline_size < 3) {
+			return;
+		}
+
+		const int base = r_verts.size();
+		r_verts.push_back(p_center);
+		r_colors.push_back(p_color);
+
+		for (int i = 0; i < outline_size; i++) {
+			r_verts.push_back(p_outline[i]);
+			r_colors.push_back(p_color);
+		}
+
+		for (int i = 0; i < outline_size; i++) {
+			r_indices.push_back(base);
+			r_indices.push_back(base + 1 + i);
+			r_indices.push_back(base + 1 + ((i + 1) % outline_size));
+		}
+	}
+
+	inline void draw_shape_ring(PackedVector2Array& r_verts, PackedInt32Array& r_indices, PackedColorArray& r_colors,
+		const Vector<Point2>& p_inner_outline, const Vector<Point2>& p_outer_outline, const Color& p_inner_color, const Color& p_outer_color) {
+		const int outline_size = MIN(p_inner_outline.size(), p_outer_outline.size());
+		if (outline_size < 3) {
+			return;
+		}
+
+		const int base = r_verts.size();
+		for (int i = 0; i < outline_size; i++) {
+			r_verts.push_back(p_inner_outline[i]);
+			r_colors.push_back(p_inner_color);
+			r_verts.push_back(p_outer_outline[i]);
+			r_colors.push_back(p_outer_color);
+		}
+
+		for (int i = 0; i < outline_size; i++) {
+			const int inner_a = base + i * 2;
+			const int outer_a = inner_a + 1;
+			const int inner_b = base + ((i + 1) % outline_size) * 2;
+			const int outer_b = inner_b + 1;
+
+			r_indices.push_back(inner_a);
+			r_indices.push_back(outer_a);
+			r_indices.push_back(outer_b);
+			r_indices.push_back(inner_a);
+			r_indices.push_back(outer_b);
+			r_indices.push_back(inner_b);
+		}
+	}
 	void StyleBoxArrow::_bind_methods() {
 		ClassDB::bind_method(D_METHOD("set_bg_color", "color"), &StyleBoxArrow::set_bg_color);
 		ClassDB::bind_method(D_METHOD("get_bg_color"), &StyleBoxArrow::get_bg_color);
@@ -164,404 +282,146 @@ namespace godot {
 			return;
 		}
 
-		// 确定箭头方向并计算主体/箭头矩形
-		Side arrow_side = SIDE_TOP;
-		switch (arrow_direction) {
+		{
+			Side arrow_side = SIDE_TOP;
+			switch (arrow_direction) {
 			case ARROW_TOP: arrow_side = SIDE_TOP; break;
 			case ARROW_RIGHT: arrow_side = SIDE_RIGHT; break;
 			case ARROW_BOTTOM: arrow_side = SIDE_BOTTOM; break;
 			case ARROW_LEFT: arrow_side = SIDE_LEFT; break;
-		}
-
-		real_t arrow_w = arrow_width;
-		Rect2 body_rect = style_rect;
-		Rect2 arrow_rect = style_rect;
-
-		// 将 style_rect 分割为 body_rect（用于圆角矩形）和 arrow_rect（用于三角形尖端）
-		// 箭头位于所选边的中心
-		if (arrow_side == SIDE_TOP) {
-			arrow_w = MIN(arrow_w, style_rect.size.width);
-			body_rect.position.y += arrow_w;
-			body_rect.size.y = MAX(body_rect.size.y - arrow_w, 0);
-			arrow_rect.size.y = arrow_w;
-		} else if (arrow_side == SIDE_BOTTOM) {
-			arrow_w = MIN(arrow_w, style_rect.size.width);
-			body_rect.size.y = MAX(body_rect.size.y - arrow_w, 0);
-			arrow_rect.position.y = body_rect.position.y + body_rect.size.y;
-			arrow_rect.size.y = arrow_w;
-		} else if (arrow_side == SIDE_LEFT) {
-			arrow_w = MIN(arrow_w, style_rect.size.height);
-			body_rect.position.x += arrow_w;
-			body_rect.size.x = MAX(body_rect.size.x - arrow_w, 0);
-			arrow_rect.size.x = arrow_w;
-		} else { // SIDE_RIGHT
-			arrow_w = MIN(arrow_w, style_rect.size.height);
-			body_rect.size.x = MAX(body_rect.size.x - arrow_w, 0);
-			arrow_rect.position.x = body_rect.position.x + body_rect.size.x;
-			arrow_rect.size.x = arrow_w;
-		}
-
-		// 如果箭头占据整个矩形，则回退到无箭头绘制
-		bool has_arrow = arrow_w > 0 && body_rect.size.width > 0 && body_rect.size.height > 0;
-
-		const bool rounded_corners = (corner_radius[0] > 0) || (corner_radius[1] > 0) || (corner_radius[2] > 0) || (corner_radius[3] > 0);
-		const bool aa_on = (rounded_corners || !skew.is_zero_approx()) && anti_aliased;
-		const bool blend_on = blend_border && draw_border;
-
-		Color border_color_alpha = Color(border_color.r, border_color.g, border_color.b, 0);
-		Color border_color_blend = (draw_center ? bg_color : border_color_alpha);
-		Color border_color_inner = blend_on ? border_color_blend : border_color;
-
-		// 为 body_rect 调整边框
-		real_t width = MAX(body_rect.size.width, 0);
-		real_t height = MAX(body_rect.size.height, 0);
-		real_t adapted_border[4] = { 1000000.0, 1000000.0, 1000000.0, 1000000.0 };
-		adapt_values(SIDE_TOP, SIDE_BOTTOM, adapted_border, border_width, height, height, height);
-		adapt_values(SIDE_LEFT, SIDE_RIGHT, adapted_border, border_width, width, width, width);
-
-		// 为 body_rect 调整圆角
-		real_t adapted_corner[4] = { 1000000.0, 1000000.0, 1000000.0, 1000000.0 };
-		adapt_values(CORNER_TOP_RIGHT, CORNER_BOTTOM_RIGHT, adapted_corner, corner_radius, height, height - adapted_border[SIDE_BOTTOM], height - adapted_border[SIDE_TOP]);
-		adapt_values(CORNER_TOP_LEFT, CORNER_BOTTOM_LEFT, adapted_corner, corner_radius, height, height - adapted_border[SIDE_BOTTOM], height - adapted_border[SIDE_TOP]);
-		adapt_values(CORNER_TOP_LEFT, CORNER_TOP_RIGHT, adapted_corner, corner_radius, width, width - adapted_border[SIDE_RIGHT], width - adapted_border[SIDE_LEFT]);
-		adapt_values(CORNER_BOTTOM_LEFT, CORNER_BOTTOM_RIGHT, adapted_corner, corner_radius, width, width - adapted_border[SIDE_RIGHT], width - adapted_border[SIDE_LEFT]);
-
-		Rect2 infill_rect = body_rect.grow_individual(-adapted_border[SIDE_LEFT], -adapted_border[SIDE_TOP], -adapted_border[SIDE_RIGHT], -adapted_border[SIDE_BOTTOM]);
-		Rect2 border_style_rect = body_rect;
-
-		real_t aa_size_scaled = 1.0f;
-		if (aa_on) {
-			real_t scale_factor = 0.0f;
-			if (scale_factor == 0.0) {
-				scale_factor = 1.0;
-			}
-			aa_size_scaled = aa_size / scale_factor;
-		}
-
-		if (aa_on) {
-			for (int i = 0; i < 4; i++) {
-				if (border_width[i] > 0) {
-					border_style_rect = border_style_rect.grow_side((Side)i, -aa_size_scaled);
-				}
-			}
-		}
-
-		PackedVector2Array verts;
-		PackedInt32Array indices;
-		PackedColorArray colors;
-		PackedVector2Array uvs;
-
-		// 绘制阴影（仅针对主体，为简化省略箭头阴影）
-		if (draw_shadow) {
-			Rect2 shadow_inner_rect = body_rect;
-			shadow_inner_rect.position += shadow_offset;
-			Rect2 shadow_rect = body_rect.grow(shadow_size);
-			shadow_rect.position += shadow_offset;
-			Color shadow_color_transparent = Color(shadow_color.r, shadow_color.g, shadow_color.b, 0);
-
-			draw_rounded_rectangle(verts, indices, colors, shadow_inner_rect, adapted_corner,
-				shadow_rect, shadow_inner_rect, shadow_color, shadow_color_transparent, corner_detail, skew);
-			if (draw_center) {
-				draw_rounded_rectangle(verts, indices, colors, shadow_inner_rect, adapted_corner,
-					shadow_inner_rect, shadow_inner_rect, shadow_color, shadow_color, corner_detail, skew, true);
-			}
-		}
-
-		// 绘制主体圆角矩形
-		// 边框（无抗锯齿）
-		if (draw_border && !aa_on) {
-			draw_rounded_rectangle(verts, indices, colors, border_style_rect, adapted_corner,
-				border_style_rect, infill_rect, border_color_inner, border_color, corner_detail, skew);
-		}
-		// 填充（无抗锯齿）
-		if (draw_center && (!aa_on || blend_on)) {
-			draw_rounded_rectangle(verts, indices, colors, border_style_rect, adapted_corner,
-				infill_rect, infill_rect, bg_color, bg_color, corner_detail, skew, true);
-		}
-
-		// 主体抗锯齿
-		if (aa_on) {
-			real_t aa_border_width[4] = {};
-			real_t aa_border_width_half[4] = {};
-			real_t aa_fill_width[4] = {};
-			real_t aa_fill_width_half[4] = {};
-
-			if (draw_border) {
-				for (int i = 0; i < 4; i++) {
-					if (border_width[i] > 0) {
-						aa_border_width[i] = aa_size_scaled;
-						aa_border_width_half[i] = aa_size_scaled * 0.5;
-						aa_fill_width[i] = 0;
-						aa_fill_width_half[i] = 0;
-					} else {
-						aa_border_width[i] = 0;
-						aa_border_width_half[i] = 0;
-						aa_fill_width[i] = aa_size_scaled;
-						aa_fill_width_half[i] = aa_size_scaled * 0.5;
-					}
-				}
-			} else {
-				for (int i = 0; i < 4; i++) {
-					aa_border_width[i] = 0;
-					aa_border_width_half[i] = 0;
-					aa_fill_width[i] = aa_size_scaled;
-					aa_fill_width_half[i] = aa_size_scaled * 0.5;
-				}
 			}
 
-			if (draw_center) {
-				Rect2 infill_rect_aa_transparent = infill_rect.grow_individual(aa_fill_width_half[SIDE_LEFT], aa_fill_width_half[SIDE_TOP],
-					aa_fill_width_half[SIDE_RIGHT], aa_fill_width_half[SIDE_BOTTOM]);
-				Rect2 infill_rect_aa_colored = infill_rect_aa_transparent.grow_individual(-aa_fill_width[SIDE_LEFT], -aa_fill_width[SIDE_TOP],
-					-aa_fill_width[SIDE_RIGHT], -aa_fill_width[SIDE_BOTTOM]);
-				if (!blend_on) {
-					draw_rounded_rectangle(verts, indices, colors, border_style_rect, adapted_corner,
-						infill_rect_aa_colored, infill_rect_aa_colored, bg_color, bg_color, corner_detail, skew, true);
-				}
-				if (!blend_on || !draw_border) {
-					Color alpha_bg = Color(bg_color.r, bg_color.g, bg_color.b, 0);
-					draw_rounded_rectangle(verts, indices, colors, border_style_rect, adapted_corner,
-						infill_rect_aa_transparent, infill_rect_aa_colored, bg_color, alpha_bg, corner_detail, skew);
-				}
-			}
-
-			if (draw_border) {
-				Rect2 inner_rect_aa_colored = infill_rect.grow_individual(aa_border_width_half[SIDE_LEFT], aa_border_width_half[SIDE_TOP],
-					aa_border_width_half[SIDE_RIGHT], aa_border_width_half[SIDE_BOTTOM]);
-				Rect2 inner_rect_aa_transparent = inner_rect_aa_colored.grow_individual(-aa_border_width[SIDE_LEFT], -aa_border_width[SIDE_TOP],
-					-aa_border_width[SIDE_RIGHT], -aa_border_width[SIDE_BOTTOM]);
-				Rect2 outer_rect_aa_transparent = body_rect.grow_individual(aa_border_width_half[SIDE_LEFT], aa_border_width_half[SIDE_TOP],
-					aa_border_width_half[SIDE_RIGHT], aa_border_width_half[SIDE_BOTTOM]);
-				Rect2 outer_rect_aa_colored = border_style_rect.grow_individual(aa_border_width_half[SIDE_LEFT], aa_border_width_half[SIDE_TOP],
-					aa_border_width_half[SIDE_RIGHT], aa_border_width_half[SIDE_BOTTOM]);
-
-				draw_rounded_rectangle(verts, indices, colors, border_style_rect, adapted_corner,
-					outer_rect_aa_colored, ((blend_on) ? infill_rect : inner_rect_aa_colored), border_color_inner, border_color, corner_detail, skew);
-				if (!blend_on) {
-					draw_rounded_rectangle(verts, indices, colors, border_style_rect, adapted_corner,
-						inner_rect_aa_colored, inner_rect_aa_transparent, border_color_blend, border_color, corner_detail, skew);
-				}
-				draw_rounded_rectangle(verts, indices, colors, border_style_rect, adapted_corner,
-					outer_rect_aa_transparent, outer_rect_aa_colored, border_color, border_color_alpha, corner_detail, skew);
-			}
-		}
-
-		// 绘制箭头（三角形 + 可选边框）
-		if (has_arrow && arrow_w > 0) {
-			Point2 tip, base_left, base_right;
-			real_t half_base = 0;
+			real_t arrow_w = MAX(arrow_width, 0);
+			Rect2 body_rect = style_rect;
 
 			if (arrow_side == SIDE_TOP) {
-				half_base = arrow_rect.size.width * 0.5;
-				tip = Point2(arrow_rect.position.x + half_base, arrow_rect.position.y);
-				base_left = Point2(arrow_rect.position.x, arrow_rect.position.y + arrow_rect.size.y);
-				base_right = Point2(arrow_rect.position.x + arrow_rect.size.width, arrow_rect.position.y + arrow_rect.size.y);
-			} else if (arrow_side == SIDE_BOTTOM) {
-				half_base = arrow_rect.size.width * 0.5;
-				tip = Point2(arrow_rect.position.x + half_base, arrow_rect.position.y + arrow_rect.size.y);
-				base_left = Point2(arrow_rect.position.x + arrow_rect.size.width, arrow_rect.position.y);
-				base_right = Point2(arrow_rect.position.x, arrow_rect.position.y);
-			} else if (arrow_side == SIDE_LEFT) {
-				half_base = arrow_rect.size.height * 0.5;
-				tip = Point2(arrow_rect.position.x, arrow_rect.position.y + half_base);
-				base_left = Point2(arrow_rect.position.x + arrow_rect.size.x, arrow_rect.position.y + arrow_rect.size.y);
-				base_right = Point2(arrow_rect.position.x + arrow_rect.size.x, arrow_rect.position.y);
-			} else {
-				half_base = arrow_rect.size.height * 0.5;
-				tip = Point2(arrow_rect.position.x + arrow_rect.size.x, arrow_rect.position.y + half_base);
-				base_left = Point2(arrow_rect.position.x, arrow_rect.position.y);
-				base_right = Point2(arrow_rect.position.x, arrow_rect.position.y + arrow_rect.size.y);
+				arrow_w = MIN(arrow_w, style_rect.size.height);
+				body_rect.position.y += arrow_w;
+				body_rect.size.y = MAX(body_rect.size.y - arrow_w, 0);
+			}
+			else if (arrow_side == SIDE_BOTTOM) {
+				arrow_w = MIN(arrow_w, style_rect.size.height);
+				body_rect.size.y = MAX(body_rect.size.y - arrow_w, 0);
+			}
+			else if (arrow_side == SIDE_LEFT) {
+				arrow_w = MIN(arrow_w, style_rect.size.width);
+				body_rect.position.x += arrow_w;
+				body_rect.size.x = MAX(body_rect.size.x - arrow_w, 0);
+			}
+			else {
+				arrow_w = MIN(arrow_w, style_rect.size.width);
+				body_rect.size.x = MAX(body_rect.size.x - arrow_w, 0);
 			}
 
-			// 绘制箭头中心填充
+			if (Math::is_zero_approx(body_rect.size.width) || Math::is_zero_approx(body_rect.size.height)) {
+				return;
+			}
+
+			bool has_arrow = arrow_w > 0;
+			const bool rounded_corners = (corner_radius[0] > 0) || (corner_radius[1] > 0) || (corner_radius[2] > 0) || (corner_radius[3] > 0);
+			const bool aa_on = (rounded_corners || has_arrow || !skew.is_zero_approx()) && anti_aliased;
+			const bool blend_on = blend_border && draw_border;
+
+			Color border_color_inner = blend_on && draw_center ? bg_color : border_color;
+
+			real_t adapted_border[4] = { 1000000.0, 1000000.0, 1000000.0, 1000000.0 };
+			adapt_values(SIDE_TOP, SIDE_BOTTOM, adapted_border, border_width, body_rect.size.height, body_rect.size.height, body_rect.size.height);
+			adapt_values(SIDE_LEFT, SIDE_RIGHT, adapted_border, border_width, body_rect.size.width, body_rect.size.width, body_rect.size.width);
+
+			real_t adapted_corner[4] = { 1000000.0, 1000000.0, 1000000.0, 1000000.0 };
+			adapt_values(CORNER_TOP_RIGHT, CORNER_BOTTOM_RIGHT, adapted_corner, corner_radius, body_rect.size.height, body_rect.size.height - adapted_border[SIDE_BOTTOM], body_rect.size.height - adapted_border[SIDE_TOP]);
+			adapt_values(CORNER_TOP_LEFT, CORNER_BOTTOM_LEFT, adapted_corner, corner_radius, body_rect.size.height, body_rect.size.height - adapted_border[SIDE_BOTTOM], body_rect.size.height - adapted_border[SIDE_TOP]);
+			adapt_values(CORNER_TOP_LEFT, CORNER_TOP_RIGHT, adapted_corner, corner_radius, body_rect.size.width, body_rect.size.width - adapted_border[SIDE_RIGHT], body_rect.size.width - adapted_border[SIDE_LEFT]);
+			adapt_values(CORNER_BOTTOM_LEFT, CORNER_BOTTOM_RIGHT, adapted_corner, corner_radius, body_rect.size.width, body_rect.size.width - adapted_border[SIDE_RIGHT], body_rect.size.width - adapted_border[SIDE_LEFT]);
+
+			Rect2 infill_rect = body_rect.grow_individual(-adapted_border[SIDE_LEFT], -adapted_border[SIDE_TOP], -adapted_border[SIDE_RIGHT], -adapted_border[SIDE_BOTTOM]);
+			real_t inner_corner[4];
+			set_inner_corner_radius(body_rect, infill_rect, adapted_corner, inner_corner);
+
+			real_t aa_size_scaled = 1.0f;
+			if (aa_on) {
+				aa_size_scaled = aa_size;
+			}
+
+			PackedVector2Array verts;
+			PackedInt32Array indices;
+			PackedColorArray colors;
+			PackedVector2Array uvs;
+
+			Rect2 skew_rect = style_rect;
+			Vector<Point2> outer_outline;
+			Vector<Point2> inner_outline;
+			build_arrow_outline(outer_outline, body_rect, adapted_corner, arrow_side, arrow_w, has_arrow, corner_detail, skew_rect, skew);
+			build_arrow_outline(inner_outline, infill_rect, inner_corner, arrow_side, arrow_w, has_arrow, corner_detail, skew_rect, skew);
+
+			if (draw_shadow) {
+				Rect2 shadow_body_rect = offset_rect(body_rect, shadow_offset);
+				Rect2 shadow_outer_rect = body_rect.grow(shadow_size);
+				shadow_outer_rect.position += shadow_offset;
+				Rect2 shadow_skew_rect = offset_rect(style_rect, shadow_offset);
+
+				real_t shadow_outer_corner[4] = {
+					adapted_corner[0] + shadow_size,
+					adapted_corner[1] + shadow_size,
+					adapted_corner[2] + shadow_size,
+					adapted_corner[3] + shadow_size
+				};
+				Color shadow_color_transparent = Color(shadow_color.r, shadow_color.g, shadow_color.b, 0);
+				Vector<Point2> shadow_outline;
+				Vector<Point2> shadow_outer_outline;
+
+				build_arrow_outline(shadow_outline, shadow_body_rect, adapted_corner, arrow_side, arrow_w, has_arrow, corner_detail, shadow_skew_rect, skew);
+				build_arrow_outline(shadow_outer_outline, shadow_outer_rect, shadow_outer_corner, arrow_side, arrow_w, has_arrow, corner_detail, shadow_skew_rect, skew);
+				draw_shape_ring(verts, indices, colors, shadow_outline, shadow_outer_outline, shadow_color, shadow_color_transparent);
+				if (draw_center) {
+					draw_shape_fill(verts, indices, colors, shadow_outline, skew_point(shadow_body_rect.get_center(), shadow_skew_rect, skew), shadow_color);
+				}
+			}
+
 			if (draw_center) {
-				add_triangle(verts, indices, colors, tip, base_left, base_right, bg_color);
+				if (draw_border) {
+					draw_shape_fill(verts, indices, colors, inner_outline, skew_point(infill_rect.get_center(), skew_rect, skew), bg_color);
+				}
+				else {
+					draw_shape_fill(verts, indices, colors, outer_outline, skew_point(body_rect.get_center(), skew_rect, skew), bg_color);
+				}
 			}
 
-			// 绘制箭头边框（作为三角形周围的细环）
 			if (draw_border) {
-				// 计算箭头边缘的边框厚度
-				real_t bw = 0;
-				if (arrow_side == SIDE_TOP) bw = adapted_border[SIDE_BOTTOM];
-				else if (arrow_side == SIDE_BOTTOM) bw = adapted_border[SIDE_TOP];
-				else if (arrow_side == SIDE_LEFT) bw = adapted_border[SIDE_RIGHT];
-				else bw = adapted_border[SIDE_LEFT];
-
-				if (bw > 0) {
-					// 通过将每条边向内移动 bw 来计算内部三角形
-					// 对于三角形，我们沿着每条边的法线偏移来缩小
-					Point2 inner_tip, inner_base_left, inner_base_right;
-
-					// 边向量
-					Vector2 e1 = base_left - tip;
-					Vector2 e2 = base_right - base_left;
-					Vector2 e3 = tip - base_right;
-
-					// 指向内部的法线（对于逆时针绕向：尖端 -> 左基点 -> 右基点）
-					Vector2 n1 = Vector2(-e1.y, e1.x).normalized();
-					Vector2 n2 = Vector2(-e2.y, e2.x).normalized();
-					Vector2 n3 = Vector2(-e3.y, e3.x).normalized();
-
-					// 将每条边向内偏移 bw，然后求交
-					auto intersect_lines = [](const Point2& p1, const Vector2& d1, const Point2& p2, const Vector2& d2) -> Point2 {
-						real_t det = d1.x * d2.y - d1.y * d2.x;
-						if (Math::is_zero_approx(det)) {
-							return p1;
-						}
-						real_t t = ((p2.x - p1.x) * d2.y - (p2.y - p1.y) * d2.x) / det;
-						return p1 + d1 * t;
-					};
-
-					Point2 edge1_p1 = tip + n1 * bw;
-					Point2 edge2_p1 = base_left + n2 * bw;
-					Point2 edge3_p1 = base_right + n3 * bw;
-
-					inner_tip = intersect_lines(edge1_p1, e1, edge3_p1, e3);
-					inner_base_left = intersect_lines(edge1_p1, e1, edge2_p1, e2);
-					inner_base_right = intersect_lines(edge2_p1, e2, edge3_p1, e3);
-
-					// 将边框绘制为连接外三角形边和内三角形边的 3 个四边形
-					add_quad(verts, indices, colors, tip, inner_tip, inner_base_left, base_left, border_color);
-					add_quad(verts, indices, colors, base_left, inner_base_left, inner_base_right, base_right, border_color);
-					add_quad(verts, indices, colors, base_right, inner_base_right, inner_tip, tip, border_color);
-				}
+				draw_shape_ring(verts, indices, colors, inner_outline, outer_outline, border_color_inner, border_color);
 			}
+
+			if (aa_on) {
+				Rect2 aa_rect = body_rect.grow(aa_size_scaled);
+				real_t aa_corner[4] = {
+					adapted_corner[0] + aa_size_scaled,
+					adapted_corner[1] + aa_size_scaled,
+					adapted_corner[2] + aa_size_scaled,
+					adapted_corner[3] + aa_size_scaled
+				};
+				Color edge_color = draw_border ? border_color : bg_color;
+				Color edge_color_alpha = Color(edge_color.r, edge_color.g, edge_color.b, 0);
+				Vector<Point2> aa_outline;
+
+				build_arrow_outline(aa_outline, aa_rect, aa_corner, arrow_side, arrow_w, has_arrow, corner_detail, skew_rect, skew);
+				draw_shape_ring(verts, indices, colors, outer_outline, aa_outline, edge_color, edge_color_alpha);
+			}
+
+			Rect2 uv_rect = style_rect.grow(aa_on ? aa_size_scaled : 0);
+			uvs.resize(verts.size());
+			Point2* uvs_ptr = uvs.ptrw();
+			for (int i = 0; i < verts.size(); i++) {
+				uvs_ptr[i].x = (verts[i].x - uv_rect.position.x) / uv_rect.size.width;
+				uvs_ptr[i].y = (verts[i].y - uv_rect.position.y) / uv_rect.size.height;
+			}
+
+			RenderingServer* vs = RenderingServer::get_singleton();
+			vs->canvas_item_add_triangle_array(p_to_canvas_item, indices, verts, colors, uvs);
+			return;
 		}
 
-		// 计算 UV 坐标
-		Rect2 uv_rect = style_rect.grow(aa_on ? aa_size_scaled : 0);
-		uvs.resize(verts.size());
-		Point2* uvs_ptr = uvs.ptrw();
-		for (int i = 0; i < verts.size(); i++) {
-			uvs_ptr[i].x = (verts[i].x - uv_rect.position.x) / uv_rect.size.width;
-			uvs_ptr[i].y = (verts[i].y - uv_rect.position.y) / uv_rect.size.height;
-		}
-
-		// 绘制样式框
-		RenderingServer* vs = RenderingServer::get_singleton();
-		vs->canvas_item_add_triangle_array(p_to_canvas_item, indices, verts, colors, uvs);
 	}
 
-	inline void draw_rounded_rectangle(PackedVector2Array& verts, PackedInt32Array& indices, PackedColorArray& colors, const Rect2& style_rect, const real_t corner_radius[4],
-		const Rect2& ring_rect, const Rect2& inner_rect, const Color& inner_color, const Color& outer_color, const int corner_detail, const Vector2& skew, bool is_filled) {
-		int64_t vert_offset = verts.size();
-		int adapted_corner_detail = (corner_radius[0] > 0) || (corner_radius[1] > 0) || (corner_radius[2] > 0) || (corner_radius[3] > 0) ? corner_detail : 1;
-
-		bool draw_border = !is_filled;
-
-		real_t ring_corner_radius[4];
-		set_inner_corner_radius(style_rect, ring_rect, corner_radius, ring_corner_radius);
-
-		Point2 ring_scale[4];
-		set_corner_scale(style_rect, ring_rect, ring_corner_radius, ring_scale);
-
-		// 圆角半径中心点
-		Vector<Point2> outer_points = {
-			ring_rect.position + Vector2(ring_corner_radius[0], ring_corner_radius[0]) * ring_scale[0], //tl
-			Point2(ring_rect.position.x + ring_rect.size.x - ring_corner_radius[1] * ring_scale[1].x, ring_rect.position.y + ring_corner_radius[1] * ring_scale[1].y), //tr
-			ring_rect.position + ring_rect.size - Vector2(ring_corner_radius[2], ring_corner_radius[2]) * ring_scale[2], //br
-			Point2(ring_rect.position.x + ring_corner_radius[3] * ring_scale[3].x, ring_rect.position.y + ring_rect.size.y - ring_corner_radius[3] * ring_scale[3].y) //bl
-		};
-
-		real_t inner_corner_radius[4];
-		set_inner_corner_radius(style_rect, inner_rect, corner_radius, inner_corner_radius);
-
-		Point2 inner_scale[4];
-		set_corner_scale(style_rect, inner_rect, inner_corner_radius, inner_scale);
-
-		Vector<Point2> inner_points = {
-			inner_rect.position + Vector2(inner_corner_radius[0], inner_corner_radius[0]) * inner_scale[0], //tl
-			Point2(inner_rect.position.x + inner_rect.size.x - inner_corner_radius[1] * inner_scale[1].x, inner_rect.position.y + inner_corner_radius[1] * inner_scale[1].y), //tr
-			inner_rect.position + inner_rect.size - Vector2(inner_corner_radius[2], inner_corner_radius[2]) * inner_scale[2], //br
-			Point2(inner_rect.position.x + inner_corner_radius[3] * inner_scale[3].x, inner_rect.position.y + inner_rect.size.y - inner_corner_radius[3] * inner_scale[3].y) //bl
-		};
-
-		// 计算顶点
-
-		// 如果中心被填充，我们不绘制边框，直接以内环作为参考，因为对此方法的所有调用
-		// 要么绘制圆环，要么绘制填充的圆角矩形，但不会同时绘制两者
-		const real_t quarter_arc_rad = Math_PI / 2.0;
-		const Point2 style_rect_center = style_rect.get_center();
-
-		const int64_t colors_size = colors.size();
-		const int64_t verts_size = verts.size();
-		const int new_verts_amount = (adapted_corner_detail + 1) * (draw_border ? 8 : 4);
-
-		colors.resize(colors_size + new_verts_amount);
-		verts.resize(verts_size + new_verts_amount);
-		Color* colors_ptr = colors.ptrw();
-		Vector2* verts_ptr = verts.ptrw();
-
-		for (int corner_idx = 0; corner_idx < 4; corner_idx++) {
-			for (int detail = 0; detail <= adapted_corner_detail; detail++) {
-				int idx_ofs = (adapted_corner_detail + 1) * corner_idx + detail;
-				if (draw_border) {
-					idx_ofs *= 2;
-				}
-
-				const real_t pt_angle = (corner_idx + detail / (double)adapted_corner_detail) * quarter_arc_rad + Math_PI;
-				const real_t angle_cosine = Math::cos(pt_angle);
-				const real_t angle_sine = Math::sin(pt_angle);
-
-				{
-					const real_t x = inner_corner_radius[corner_idx] * angle_cosine * inner_scale[corner_idx].x + inner_points[corner_idx].x;
-					const real_t y = inner_corner_radius[corner_idx] * angle_sine * inner_scale[corner_idx].y + inner_points[corner_idx].y;
-					const float x_skew = -skew.x * (y - style_rect_center.y);
-					const float y_skew = -skew.y * (x - style_rect_center.x);
-					verts_ptr[verts_size + idx_ofs] = Vector2(x + x_skew, y + y_skew);
-					colors_ptr[colors_size + idx_ofs] = inner_color;
-				}
-
-				if (draw_border) {
-					const real_t x = ring_corner_radius[corner_idx] * angle_cosine * ring_scale[corner_idx].x + outer_points[corner_idx].x;
-					const real_t y = ring_corner_radius[corner_idx] * angle_sine * ring_scale[corner_idx].y + outer_points[corner_idx].y;
-					const float x_skew = -skew.x * (y - style_rect_center.y);
-					const float y_skew = -skew.y * (x - style_rect_center.x);
-					verts_ptr[verts_size + idx_ofs + 1] = Vector2(x + x_skew, y + y_skew);
-					colors_ptr[colors_size + idx_ofs + 1] = outer_color;
-				}
-			}
-		}
-
-		int64_t ring_vert_count = verts.size() - vert_offset;
-
-		// 填充边框的索引和颜色
-		if (draw_border) {
-			int64_t indices_size = indices.size();
-			indices.resize(indices_size + ring_vert_count * 3);
-			int* indices_ptr = indices.ptrw();
-
-			for (int64_t i = 0; i < ring_vert_count; i++) {
-				int idx_ofs = indices_size + i * 3;
-				indices_ptr[idx_ofs] = vert_offset + i % ring_vert_count;
-				indices_ptr[idx_ofs + 1] = vert_offset + (i + 2) % ring_vert_count;
-				indices_ptr[idx_ofs + 2] = vert_offset + (i + 1) % ring_vert_count;
-			}
-		}
-
-		if (is_filled) {
-			// 计算绘制圆角矩形的三角形模式
-			// 由每条包含两个三角形的垂直条纹组成
-			int64_t stripes_count = ring_vert_count / 2 - 1;
-			int last_vert_id = ring_vert_count - 1;
-
-			int64_t indices_size = indices.size();
-			indices.resize(indices_size + stripes_count * 6);
-			int* indices_ptr = indices.ptrw();
-
-			for (int64_t i = 0; i < stripes_count; i++) {
-				int idx_ofs = indices_size + i * 6;
-				// Polygon 1.
-				indices_ptr[idx_ofs] = vert_offset + i;
-				indices_ptr[idx_ofs + 1] = vert_offset + last_vert_id - i - 1;
-				indices_ptr[idx_ofs + 2] = vert_offset + i + 1;
-				// Polygon 2.
-				indices_ptr[idx_ofs + 3] = vert_offset + i;
-				indices_ptr[idx_ofs + 4] = vert_offset + last_vert_id - i;
-				indices_ptr[idx_ofs + 5] = vert_offset + last_vert_id - i - 1;
-			}
-		}
-	}
 
 	inline void adapt_values(int p_index_a, int p_index_b, real_t* adapted_values, const real_t* p_values, const real_t p_width, const real_t p_max_a, const real_t p_max_b) {
 		real_t value_a = p_values[p_index_a];
@@ -581,79 +441,6 @@ namespace godot {
 		inner_corner_radius[1] = MAX(corner_radius[1] - MIN(border_top, border_right), 0); // Top right.
 		inner_corner_radius[2] = MAX(corner_radius[2] - MIN(border_bottom, border_right), 0); // Bottom right.
 		inner_corner_radius[3] = MAX(corner_radius[3] - MIN(border_bottom, border_left), 0); // Bottom left.
-	}
-
-	inline void set_corner_scale(const Rect2& style_rect, const Rect2& inner_rect, const real_t corner_radius[4], Point2* inner_scale) {
-		real_t border_left = inner_rect.position.x - style_rect.position.x;
-		real_t border_top = inner_rect.position.y - style_rect.position.y;
-		real_t border_right = style_rect.size.width - inner_rect.size.width - border_left;
-		real_t border_bottom = style_rect.size.height - inner_rect.size.height - border_top;
-
-		// 沿边的溢出量
-		// 例如，SIDE_LEFT 边是左上角和左下角之间的溢出
-		// MIN(0,) 用于忽略下溢，取负是为了使值为正
-		real_t edge_overflow[4] = {
-			-MIN(0, inner_rect.size.y - corner_radius[CORNER_TOP_LEFT] - corner_radius[CORNER_BOTTOM_LEFT]),
-			-MIN(0, inner_rect.size.x - corner_radius[CORNER_TOP_LEFT] - corner_radius[CORNER_TOP_RIGHT]),
-			-MIN(0, inner_rect.size.y - corner_radius[CORNER_TOP_RIGHT] - corner_radius[CORNER_BOTTOM_RIGHT]),
-			-MIN(0, inner_rect.size.x - corner_radius[CORNER_BOTTOM_LEFT] - corner_radius[CORNER_BOTTOM_RIGHT])
-		};
-
-		// 边框之和
-		real_t hb_sum = border_left + border_right;
-		real_t vb_sum = border_top + border_bottom;
-
-		// 每一边与其对边之和的比率
-		// 由于溢出只发生在相对的边框之间，你只需要获取每个边框相对于相关边框之和的比率
-		real_t ratios[4] = {
-			// 防止除以 0 错误
-			hb_sum > 0 ? (border_left / hb_sum) : 0,
-			vb_sum > 0 ? (border_top / vb_sum) : 0,
-			hb_sum > 0 ? (border_right / hb_sum) : 0,
-			vb_sum > 0 ? (border_bottom / vb_sum) : 0
-		};
-
-		// 每个角应缩小的原始量
-		Point2 corner_reduction[4] = {
-			Point2(edge_overflow[SIDE_TOP] * ratios[SIDE_LEFT], edge_overflow[SIDE_LEFT] * ratios[SIDE_TOP]),
-			Point2(edge_overflow[SIDE_TOP] * ratios[SIDE_RIGHT], edge_overflow[SIDE_RIGHT] * ratios[SIDE_TOP]),
-			Point2(edge_overflow[SIDE_BOTTOM] * ratios[SIDE_RIGHT], edge_overflow[SIDE_RIGHT] * ratios[SIDE_BOTTOM]),
-			Point2(edge_overflow[SIDE_BOTTOM] * ratios[SIDE_LEFT], edge_overflow[SIDE_LEFT] * ratios[SIDE_BOTTOM]),
-		};
-
-		// 以 Point2 表示的圆角半径
-		Point2 pcr[4] = {
-			Point2(corner_radius[0], corner_radius[0]),
-			Point2(corner_radius[1], corner_radius[1]),
-			Point2(corner_radius[2], corner_radius[2]),
-			Point2(corner_radius[3], corner_radius[3]),
-		};
-
-		// 如果圆角半径太小，它们不会完全缩小
-		// 相邻的角将不得不缩小剩余部分（如果可以的话）
-		// Minf(0) 用于忽略非剩余部分，取负是为了使值为正
-		Point2 leftovers[4] = {
-			-((pcr[0] - corner_reduction[0]).minf(0)),
-			-((pcr[1] - corner_reduction[1]).minf(0)),
-			-((pcr[2] - corner_reduction[2]).minf(0)),
-			-((pcr[3] - corner_reduction[3]).minf(0)),
-		};
-
-		// 分配剩余部分后新的缩小半径
-		Point2 distributed[4] = {
-			((pcr[0] - corner_reduction[0] - leftovers[3] - leftovers[1]).maxf(0)),
-			((pcr[1] - corner_reduction[1] - leftovers[0] - leftovers[2]).maxf(0)),
-			((pcr[2] - corner_reduction[2] - leftovers[1] - leftovers[3]).maxf(0)),
-			((pcr[3] - corner_reduction[3] - leftovers[2] - leftovers[0]).maxf(0)),
-		};
-
-		// 曲线应缩放多少以达到缩小后的半径
-		for (int i = 0; i < 4; i++) {
-			// Unshrinkable 是指即使在分配剩余部分后仍然剩余的量
-			// 将其从最终缩放中排除
-			Point2 unshrinkable = (leftovers[(i + 1) % 4] + leftovers[(i + 4 - 1) % 4] - distributed[i]).maxf(0);
-			inner_scale[i] = distributed[i] / (pcr[i] - unshrinkable).maxf(FLT_EPSILON);
-		}
 	}
 
 	void StyleBoxArrow::set_bg_color(const Color& p_color) {

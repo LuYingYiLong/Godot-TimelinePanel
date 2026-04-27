@@ -93,6 +93,10 @@ namespace godot {
 		emit_signal("changed");
 	}
 
+	void TimelineTrackKey::set_time_no_signal(double p_time) {
+		time = p_time;
+	}
+
 	double TimelineTrackKey::get_time() const {
 		return time;
 	}
@@ -100,6 +104,10 @@ namespace godot {
 	void TimelineTrackKey::set_length(const double p_length) {
 		length = p_length;
 		emit_signal("changed");
+	}
+
+	void TimelineTrackKey::set_length_no_signal(double p_length) {
+		length = p_length;
 	}
 
 	double TimelineTrackKey::get_length() const {

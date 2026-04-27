@@ -5,6 +5,7 @@
 #include <godot_cpp/classes/input_event.hpp>
 #include <godot_cpp/classes/h_scroll_bar.hpp>
 #include <godot_cpp/classes/v_scroll_bar.hpp>
+#include <unordered_set>
 #include <vector>
 
 namespace godot {
@@ -55,6 +56,12 @@ namespace godot {
 		};
 
 	private:
+		enum ClipKeyEditEdge {
+			CLIP_KEY_EDIT_EDGE_NONE,
+			CLIP_KEY_EDIT_EDGE_HEAD,
+			CLIP_KEY_EDIT_EDGE_TAIL,
+		};
+
 		Color background_color;
 		Color separator_color = Color("#696969");
 		float separator_width = -1.0f;
@@ -123,14 +130,63 @@ namespace godot {
 
 		bool selecting = false;
 		bool select_pending = false;
+		bool key_dragging = false;
+		bool key_drag_moved = false;
+		bool allow_key_cross_track_move = true;
+		bool key_snap_enabled = true;
+		bool clip_key_edge_edit_enabled = true;
+		bool allow_unselected_key_edit = true;
+		bool clip_key_edge_dragging = false;
+		bool clip_key_edge_drag_moved = false;
 		float long_press_time = 0.4f;
 		float select_timer = 0.0f;
 		Vector2 select_start;
 		Vector2 select_end;
+		double key_drag_start_value = 0.0;
+		int key_drag_anchor_track = -1;
+		TimelineTrackKey *clip_key_edge_drag_key = nullptr;
+		ClipKeyEditEdge clip_key_edge_drag_edge = CLIP_KEY_EDIT_EDGE_NONE;
+		double clip_key_edge_drag_head_time = 0.0;
+		double clip_key_edge_drag_tail_time = 0.0;
+
+		struct DraggedKey {
+			TimelineTrackKey* key = nullptr;
+			int original_track_index = -1;
+			int current_track_index = -1;
+			double original_time = 0.0;
+		};
+		std::vector<DraggedKey> dragged_keys;
+
+		struct ResizedClipKey {
+			TimelineTrackKey *key = nullptr;
+			double original_head_time = 0.0;
+			double original_tail_time = 0.0;
+		};
+		std::vector<ResizedClipKey> resized_clip_keys;
+		std::unordered_set<const TimelineTrackKey *> key_release_preview_keys;
 
 		bool playhead_dragging = false;
 
 		void _collect_selected_keys();
+		bool _find_selected_key_at_position(const Vector2& p_position, int& r_track_index, TimelineTrackKey*& r_key) const;
+		int _get_track_index_at_x(float p_x) const;
+		double _position_to_key_value(double p_y) const;
+		bool _find_clip_key_edge_at_position(const Vector2 &p_position, int &r_track_index, TimelineTrackKey *&r_key, ClipKeyEditEdge &r_edge) const;
+		void _update_clip_key_edge_cursor(const Vector2 &p_position);
+		void _begin_clip_key_edge_drag(TimelineTrackKey *p_key, ClipKeyEditEdge p_edge);
+		void _update_clip_key_edge_drag(const Vector2 &p_position);
+		void _finish_clip_key_edge_drag();
+		void _begin_key_drag(int p_track_index, TimelineTrackKey* p_key, const Vector2& p_position);
+		void _update_key_drag(const Vector2& p_position);
+		void _finish_key_drag();
+		void _move_key_to_track(TimelineTrackKey* p_key, int p_from_track, int p_to_track);
+		double _snap_key_time(double p_time) const;
+		bool _keys_overlap(const TimelineTrackKey* p_a, const TimelineTrackKey* p_b) const;
+		std::vector<TimelineTrackKey *> _get_moved_key_overlaps(const std::vector<TimelineTrackKey *> &p_moved_keys) const;
+		void _update_key_release_preview(const std::vector<TimelineTrackKey *> &p_moved_keys);
+		void _clear_key_release_preview();
+		bool _is_key_release_previewed(const TimelineTrackKey *p_key) const;
+		void _destroy_moved_key_overlaps(const std::vector<TimelineTrackKey*>& p_moved_keys);
 
 		void _scroll(ScrollBar* p_scroll, double p_amount);
 		void _scroll_to(ScrollBar* p_scroll, double p_pos);
@@ -168,9 +224,22 @@ namespace godot {
 			float width = 0.0f;
 			std::vector<TimelineTrackKey*> keys;
 			double max_key_length = 0.0;
+			float max_instant_key_scale = 0.4f;
 		};
 		std::vector<CachedTrack> _track_cache;
 		void _rebuild_track_cache();
+		void _refresh_track_key_metrics();
+		void _get_visible_key_time_range(float p_y_margin, double& r_start, double& r_end) const;
+		double _key_to_y(const TimelineTrackKey* p_key) const;
+		double _key_end_to_y(const TimelineTrackKey* p_key) const;
+		float _get_instant_key_scale(const TimelineTrackKey* p_key) const;
+		Rect2 _get_instant_key_rect(const CachedTrack& p_track, const TimelineTrackKey* p_key, double p_y) const;
+		Rect2 _get_clip_key_rect(const CachedTrack& p_track, double p_y, double p_y_end) const;
+		Ref<StyleBox> _get_instant_key_normal_style(const TimelineTrackKey *p_key) const;
+		Ref<StyleBox> _get_instant_key_selected_style(const TimelineTrackKey *p_key) const;
+		Ref<StyleBox> _get_clip_key_normal_style(const TimelineTrackKey *p_key) const;
+		Ref<StyleBox> _get_clip_key_selected_style(const TimelineTrackKey *p_key) const;
+		Ref<StyleBox> _get_key_release_preview_style() const;
 
 		struct StyleCache {
 			Ref<StyleBox> instant_key_normal;
@@ -183,6 +252,8 @@ namespace godot {
 			Ref<StyleBox> clip_key_selected_fallback;
 			Ref<StyleBox> selection_rect;
 			Ref<StyleBox> selection_rect_fallback;
+			Ref<StyleBox> key_release_preview;
+			Ref<StyleBox> key_release_preview_fallback;
 
 			float icon_max_width = 0.0f;
 			float instant_key_scale = 0.4f;
@@ -201,7 +272,7 @@ namespace godot {
 		virtual void _gui_input(const Ref<InputEvent>& p_gui_input) override;
 		virtual String _get_tooltip(const Vector2& p_at_position) const override;
 
-		TimelineTrackKey* create_key(int p_track_index, double p_time, double p_length = 0.0);
+		TimelineTrackKey *create_key(int p_track_index, double p_time, double p_length = 0.0, bool p_snap = false);
 		void remove_key(int p_track_index, int p_key_index);
 		void clear_track_keys(int p_track_index);
 		void clear_all_keys();
@@ -329,6 +400,21 @@ namespace godot {
 
 		void set_selection_rect_style(Ref<StyleBox> p_style);
 		Ref<StyleBox> get_selection_rect_style() const;
+
+		void set_key_release_preview_style(Ref<StyleBox> p_style);
+		Ref<StyleBox> get_key_release_preview_style() const;
+
+		void set_allow_key_cross_track_move(bool p_enabled);
+		bool get_allow_key_cross_track_move() const;
+
+		void set_key_snap_enabled(bool p_enabled);
+		bool get_key_snap_enabled() const;
+
+		void set_clip_key_edge_edit_enabled(bool p_enabled);
+		bool get_clip_key_edge_edit_enabled() const;
+
+		void set_allow_unselected_key_edit(bool p_enabled);
+		bool get_allow_unselected_key_edit() const;
 	};
 }
 
