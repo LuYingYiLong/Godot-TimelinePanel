@@ -190,6 +190,8 @@ namespace godot {
 
 		bool playhead_dragging = false;
 
+		struct CachedTrack;
+
 		void _collect_selected_keys();
 		Rect2 _make_selection_rect(const Vector2 &p_start, const Vector2 &p_end) const;
 		TypedArray<TimelineTrackKey> _get_keys_in_rect(const Rect2 &p_rect) const;
@@ -214,6 +216,7 @@ namespace godot {
 		void _move_key_to_track(TimelineTrackKey* p_key, int p_from_track, int p_to_track);
 		double _snap_key_time(double p_time) const;
 		bool _keys_overlap(const TimelineTrackKey* p_a, const TimelineTrackKey* p_b) const;
+		bool _has_key_overlap_in_track(const CachedTrack &p_track, const TimelineTrackKey *p_key) const;
 		std::vector<TimelineTrackKey *> _get_moved_key_overlaps(const std::vector<TimelineTrackKey *> &p_moved_keys) const;
 		void _update_key_release_preview(const std::vector<TimelineTrackKey *> &p_moved_keys);
 		void _clear_key_release_preview();

@@ -166,6 +166,11 @@ namespace godot {
 		}
 	}
 	void StyleBoxArrow::_bind_methods() {
+		BIND_ENUM_CONSTANT(ARROW_TOP);
+		BIND_ENUM_CONSTANT(ARROW_RIGHT);
+		BIND_ENUM_CONSTANT(ARROW_BOTTOM);
+		BIND_ENUM_CONSTANT(ARROW_LEFT);
+
 		ClassDB::bind_method(D_METHOD("set_bg_color", "color"), &StyleBoxArrow::set_bg_color);
 		ClassDB::bind_method(D_METHOD("get_bg_color"), &StyleBoxArrow::get_bg_color);
 		ADD_PROPERTY(PropertyInfo(Variant::COLOR, "bg_color"), "set_bg_color", "get_bg_color");

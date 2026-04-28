@@ -322,16 +322,18 @@ namespace godot {
 			Vector2 start_pos;
 			if (time_ruler.is_valid()) {
 				float width = time_ruler->get_width();
-				draw_line(Point2(start_pos.x + width, header_height), Point2(start_pos.x + width, get_size().y), separator_color, separator_width);
+				const float separator_x = start_pos.x + width - hscroll_value;
+				if (separator_x >= 0.0f && separator_x <= get_size().x) {
+					draw_line(Point2(separator_x, header_height), Point2(separator_x, get_size().y), separator_color, separator_width);
+				}
 				start_pos.x += width;
 			}
-			for (int64_t i = 0; i < tracks.size(); i++) {
-				Ref<TimelineTrack> track = tracks[i];
-				if (track.is_null()) continue;
+			for (const CachedTrack &ct : _track_cache) {
+				if (ct.width <= 0.0f) continue;
 
-				float width = track->get_width();
-				draw_line(Point2(start_pos.x + width, header_height), Point2(start_pos.x + width, get_size().y), separator_color, separator_width);
-				start_pos.x += width;
+				const float separator_x = ct.x_offset - hscroll_value + ct.width;
+				if (separator_x < 0.0f || separator_x > get_size().x) continue;
+				draw_line(Point2(separator_x, header_height), Point2(separator_x, get_size().y), separator_color, separator_width);
 			}
 
 			// 绘制轨道键
@@ -520,7 +522,7 @@ namespace godot {
 				}
 
 				for (int i = 0; i < all_indicators.size(); i++) {
-					float current_width = 0.0f;
+					float current_width = -hscroll_value;
 					if (time_ruler.is_valid()) {
 						current_width += time_ruler->get_width();
 					}
@@ -548,7 +550,7 @@ namespace godot {
 						current_position = get_position_from_time(time);
 						break;
 					}
-					Rect2 header_rect = Rect2(Vector2(0.0f, current_position - 8.0f), Vector2(time_ruler->get_width(), 16.0f));
+					Rect2 header_rect = Rect2(Vector2(-hscroll_value, current_position - 8.0f), Vector2(time_ruler->get_width(), 16.0f));
 					indicator->draw(get_canvas_item(), header_rect, _format_indicator_time(time), header_width, false);
 				}
 			}
@@ -567,26 +569,31 @@ namespace godot {
 			}
 
 			// 最后绘制 header
-			start_pos = Vector2(0, 0);
 			if (time_ruler.is_valid()) {
 				float width = time_ruler->get_width();
-				Ref<StyleBox> header_background = time_ruler->get_header_background();
-				Ref<Texture2D> header_icon = time_ruler->get_header_icon();
-				_draw_header(start_pos, width, header_background, header_icon);
-				start_pos.x += width;
+				const float x = -hscroll_value;
+				if (x + width >= 0.0f && x <= get_size().x) {
+					Ref<StyleBox> header_background = time_ruler->get_header_background();
+					Ref<Texture2D> header_icon = time_ruler->get_header_icon();
+					_draw_header(Point2(x, 0.0f), width, header_background, header_icon);
+				}
 			}
-			for (int64_t i = 0; i < tracks.size(); i++) {
+			for (int64_t i = 0; i < tracks.size() && i < static_cast<int64_t>(_track_cache.size()); i++) {
 				Ref<TimelineTrack> track = tracks[i];
 				if (track.is_null()) continue;
 
-				float width = track->get_width();
+				const CachedTrack &ct = _track_cache[i];
+				if (ct.width <= 0.0f) continue;
+
+				float x = ct.x_offset - hscroll_value;
+				if (x + ct.width < 0.0f || x > get_size().x) continue;
+
 				Ref<StyleBox> header_background = track->get_header_background();
 				Ref<Texture2D> header_icon = track->get_header_icon();
-				_draw_header(start_pos, width, header_background, header_icon);
-				start_pos.x += width;
+				_draw_header(Point2(x, 0.0f), ct.width, header_background, header_icon);
 			}
 
-			draw_line(Point2(start_pos.x, header_height), Point2(start_pos.x, get_size().y), separator_color, separator_width);
+			draw_line(Point2(header_width - hscroll_value, header_height), Point2(header_width - hscroll_value, get_size().y), separator_color, separator_width);
 			_draw_minimap();
 		} break;
 		}
@@ -823,21 +830,15 @@ namespace godot {
 	}
 
 	int VTimelinePanel::_get_track_header_index_at_x(float p_x) const {
-		float x = 0.0f;
-		if (time_ruler.is_valid()) {
-			x += time_ruler->get_width();
-		}
-
 		for (int i = 0; i < static_cast<int>(_track_cache.size()); i++) {
 			const CachedTrack &ct = _track_cache[i];
 			if (ct.width <= 0.0f) continue;
 
-			const float left = x;
+			const float left = ct.x_offset - hscroll_value;
 			const float right = left + ct.width;
 			if (p_x >= left && p_x <= right) {
 				return i;
 			}
-			x = right;
 		}
 
 		return -1;
@@ -1336,6 +1337,39 @@ namespace godot {
 		}
 
 		return a_start < b_end - epsilon && b_start < a_end - epsilon;
+	}
+
+	bool VTimelinePanel::_has_key_overlap_in_track(const CachedTrack &p_track, const TimelineTrackKey *p_key) const {
+		if (!p_key || p_track.keys.empty()) {
+			return false;
+		}
+
+		const double epsilon = 0.000001;
+		const double key_start = p_key->get_time();
+		const double key_length = MAX(p_key->get_length(), 0.0);
+		const double key_end = key_start + key_length;
+		const double search_start = key_start - MAX(p_track.max_key_length, 0.0) - epsilon;
+		const double search_end = key_end + epsilon;
+
+		auto it = std::lower_bound(p_track.keys.begin(), p_track.keys.end(), search_start,
+			[](TimelineTrackKey *p_other_key, double p_time) {
+				return p_other_key && p_other_key->get_time() < p_time;
+			});
+
+		for (; it != p_track.keys.end(); ++it) {
+			TimelineTrackKey *other_key = *it;
+			if (!other_key) continue;
+
+			if (other_key->get_time() > search_end) {
+				break;
+			}
+			if (other_key->is_disabled()) continue;
+			if (_keys_overlap(p_key, other_key)) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	std::vector<TimelineTrackKey *> VTimelinePanel::_get_moved_key_overlaps(const std::vector<TimelineTrackKey *> &p_moved_keys) const {
@@ -2073,6 +2107,8 @@ namespace godot {
 		if (time_ruler.is_null()) return;
 
 		const float ruler_width = time_ruler->get_width();
+		const float ruler_left = -hscroll_value;
+		const float ruler_right = ruler_left + ruler_width;
 		const float major_tick_height = time_ruler->get_major_tick_height();
 		const float major_tick_width = time_ruler->get_major_tick_width();
 		const float minor_tick_height = time_ruler->get_minjor_tick_height();
@@ -2102,8 +2138,8 @@ namespace godot {
 				float tick_width = is_bar_line ? major_tick_width : minor_tick_width;
 
 				draw_line(
-					Point2(ruler_width - tick_height, y),
-					Point2(ruler_width, y),
+					Point2(ruler_right - tick_height, y),
+					Point2(ruler_right, y),
 					tick_color,
 					tick_width
 				);
@@ -2122,7 +2158,7 @@ namespace godot {
 					if (should_draw_number) {
 						String text = String::num_int64(bar);
 						if (font.is_valid()) {
-							draw_string(font, Point2(2.0f, y + 6.0f), text, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, tick_color);
+							draw_string(font, Point2(ruler_left + 2.0f, y + 6.0f), text, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, tick_color);
 						}
 					}
 				}
@@ -2157,8 +2193,8 @@ namespace godot {
 				float tick_width = is_second ? major_tick_height : minor_tick_height;
 
 				draw_line(
-					Point2(ruler_width - tick_width, y),
-					Point2(ruler_width, y),
+					Point2(ruler_right - tick_width, y),
+					Point2(ruler_right, y),
 					tick_color
 				);
 
@@ -2175,7 +2211,7 @@ namespace godot {
 					if (should_draw_label) {
 						String text = String::num_int64(frame / fps);
 						if (font.is_valid()) {
-							draw_string(font, Point2(2.0f, y + 6.0f), text + "s", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(1, 1, 1));
+							draw_string(font, Point2(ruler_left + 2.0f, y + 6.0f), text + "s", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(1, 1, 1));
 						}
 					}
 				}
@@ -2214,8 +2250,8 @@ namespace godot {
 				float tick_width = is_major ? major_tick_height : minor_tick_height;
 
 				draw_line(
-					Point2(ruler_width - tick_width, y),
-					Point2(ruler_width, y),
+					Point2(ruler_right - tick_width, y),
+					Point2(ruler_right, y),
 					tick_color
 				);
 
@@ -2250,7 +2286,7 @@ namespace godot {
 							break;
 						}
 						if (font.is_valid()) {
-							draw_string(font, Point2(2.0f, y + 6.0f), text, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(1, 1, 1));
+							draw_string(font, Point2(ruler_left + 2.0f, y + 6.0f), text, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(1, 1, 1));
 						}
 					}
 				}
@@ -2261,10 +2297,11 @@ namespace godot {
 	}
 
 	void VTimelinePanel::_draw_grid_beat(float p_header_width) {
-		float start_pos = 0.0f;
+		float start_pos = -hscroll_value;
 		if (time_ruler.is_valid()) {
-			start_pos = time_ruler->get_width();
+			start_pos += time_ruler->get_width();
 		}
+		const float end_pos = p_header_width - hscroll_value;
 
 		float visible_start_y = header_height;
 		float visible_end_y = get_size().y;
@@ -2287,7 +2324,7 @@ namespace godot {
 
 			draw_line(
 				Point2(start_pos, y),
-				Point2(p_header_width, y),
+				Point2(end_pos, y),
 				line_color,
 				line_w
 			);
@@ -2295,10 +2332,11 @@ namespace godot {
 	}
 
 	void VTimelinePanel::_draw_grid_frame(float p_header_width) {
-		float start_pos = 0.0f;
+		float start_pos = -hscroll_value;
 		if (time_ruler.is_valid()) {
-			start_pos = time_ruler->get_width();
+			start_pos += time_ruler->get_width();
 		}
+		const float end_pos = p_header_width - hscroll_value;
 
 		float visible_start_y = header_height;
 		float visible_end_y = get_size().y;
@@ -2328,7 +2366,7 @@ namespace godot {
 
 			draw_line(
 				Point2(start_pos, y),
-				Point2(p_header_width, y),
+				Point2(end_pos, y),
 				line_color,
 				line_width
 			);
@@ -2336,10 +2374,11 @@ namespace godot {
 	}
 
 	void VTimelinePanel::_draw_grid_time(float p_header_width) {
-		float start_pos = 0.0f;
+		float start_pos = -hscroll_value;
 		if (time_ruler.is_valid()) {
-			start_pos = time_ruler->get_width();
+			start_pos += time_ruler->get_width();
 		}
+		const float end_pos = p_header_width - hscroll_value;
 
 		float visible_start_y = header_height;
 		float visible_end_y = get_size().y;
@@ -2373,7 +2412,7 @@ namespace godot {
 
 			draw_line(
 				Point2(start_pos, y),
-				Point2(p_header_width, y),
+				Point2(end_pos, y),
 				line_color,
 				line_width
 			);
@@ -2774,8 +2813,10 @@ namespace godot {
 
 			if (mb->get_button_index() == MouseButton::MOUSE_BUTTON_RIGHT) {
 				const Vector2 mouse_position = mb->get_position();
+				const float time_ruler_left = -hscroll_value;
+				const float time_ruler_right = time_ruler_left + (time_ruler.is_valid() ? time_ruler->get_width() : 0.0f);
 				const bool is_time_ruler_position = time_ruler.is_valid() &&
-					mouse_position.x >= 0.0f && mouse_position.x <= time_ruler->get_width();
+					mouse_position.x >= time_ruler_left && mouse_position.x <= time_ruler_right;
 
 				if (!mb->is_pressed() && right_selecting) {
 					_finish_right_mouse_selection();
@@ -2822,8 +2863,10 @@ namespace godot {
 				}
 
 				const Vector2 mouse_position = mb->get_position();
+				const float time_ruler_left = -hscroll_value;
+				const float time_ruler_right = time_ruler_left + (time_ruler.is_valid() ? time_ruler->get_width() : 0.0f);
 				const bool is_time_ruler_position = time_ruler.is_valid() &&
-					mouse_position.x >= 0.0f && mouse_position.x <= time_ruler->get_width();
+					mouse_position.x >= time_ruler_left && mouse_position.x <= time_ruler_right;
 				if (mb->is_pressed() && _begin_minimap_drag(mouse_position)) {
 					accept_event();
 					return;
@@ -2881,7 +2924,9 @@ namespace godot {
 			bool is_touchscreen_available = DisplayServer::get_singleton()->is_touchscreen_available();
 			if (mb->get_button_index() == MouseButton::MOUSE_BUTTON_LEFT) {
 				if (!is_touchscreen_available) {
-					if (mb->is_pressed() && time_ruler.is_valid() && mb->get_position().x <= time_ruler->get_width()) {
+					const float time_ruler_left = -hscroll_value;
+					const float time_ruler_right = time_ruler_left + (time_ruler.is_valid() ? time_ruler->get_width() : 0.0f);
+					if (mb->is_pressed() && time_ruler.is_valid() && mb->get_position().x >= time_ruler_left && mb->get_position().x <= time_ruler_right) {
 						// 在时间尺范围内点击，更新 current_time
 						playhead_dragging = true;
 						queue_redraw();
@@ -2962,7 +3007,9 @@ namespace godot {
 			}
 
 			if (mb->is_pressed()) {
-				if (mb->is_pressed() && time_ruler.is_valid() && mb->get_position().x <= time_ruler->get_width()) {
+				const float time_ruler_left = -hscroll_value;
+				const float time_ruler_right = time_ruler_left + (time_ruler.is_valid() ? time_ruler->get_width() : 0.0f);
+				if (mb->is_pressed() && time_ruler.is_valid() && mb->get_position().x >= time_ruler_left && mb->get_position().x <= time_ruler_right) {
 					// 在时间尺范围内点击，更新 current_time
 					playhead_dragging = true;
 					queue_redraw();
@@ -3115,24 +3162,57 @@ namespace godot {
 	}
 
 	String VTimelinePanel::_get_tooltip(const Vector2& p_at_position) const {
-		if (p_at_position.y > header_height) return String();
+		const float marker_line_width_margin = 3.0f;
+		const float indicator_left = -hscroll_value;
+		const float indicator_right = indicator_left + _calculate_header_width();
+		if (p_at_position.x >= indicator_left && p_at_position.x <= indicator_right) {
+			for (int i = markers.size() - 1; i >= 0; i--) {
+				Ref<TimelineMarker> marker = markers[i];
+				if (marker.is_null()) continue;
 
-		Vector2 start_pos;
-		if (time_ruler.is_valid()) {
-			float width = time_ruler->get_width();
-			Rect2 area = Rect2(Vector2(0.0, 0.0), Vector2(width, header_height));
-			if (area.has_point(p_at_position)) return time_ruler->get_tooltip_text();
-			start_pos.x += width;
+				const String annotation = marker->get_annotation();
+				if (annotation.is_empty()) continue;
+
+				double marker_y = 0.0;
+				switch (counting_unit) {
+				case FRAME: {
+					const int safe_fps = MAX(fps, 1);
+					marker_y = get_position_from_frame(static_cast<int64_t>(marker->get_time() * safe_fps));
+					break;
+				}
+				case BEAT:
+					marker_y = _time_to_y(marker->get_time());
+					break;
+				case TIME:
+				default:
+					marker_y = get_position_from_time(marker->get_time());
+					break;
+				}
+
+				const float hit_margin = MAX(8.0f, marker->get_line_width() * 0.5f + marker_line_width_margin);
+				if (Math::abs(p_at_position.y - marker_y) <= hit_margin) {
+					return annotation;
+				}
+			}
 		}
 
-		for (int i = 0; i < tracks.size(); i++) {
+		if (p_at_position.y > header_height) return String();
+
+		if (time_ruler.is_valid()) {
+			float width = time_ruler->get_width();
+			Rect2 area = Rect2(Vector2(-hscroll_value, 0.0), Vector2(width, header_height));
+			if (area.has_point(p_at_position)) return time_ruler->get_tooltip_text();
+		}
+
+		for (int i = 0; i < tracks.size() && i < static_cast<int>(_track_cache.size()); i++) {
 			Ref<TimelineTrack> track = tracks[i];
 			if (track.is_null()) continue;
 
-			float width = track->get_width();
-			Rect2 area = Rect2(start_pos, Vector2(width, header_height));
+			const CachedTrack &ct = _track_cache[i];
+			if (ct.width <= 0.0f) continue;
+
+			Rect2 area = Rect2(Vector2(ct.x_offset - hscroll_value, 0.0f), Vector2(ct.width, header_height));
 			if (area.has_point(p_at_position)) return track->get_tooltip_text();
-			start_pos.x += width;
 		}
 
 		return String();
@@ -3148,12 +3228,9 @@ namespace godot {
 		key->set_time(target_time);
 		key->set_length(p_length);
 
-		for (TimelineTrackKey *other_key : keys) {
-			if (!other_key || other_key->is_disabled()) continue;
-			if (_keys_overlap(key, other_key)) {
-				memdelete(key);
-				return nullptr;
-			}
+		if (_has_key_overlap_in_track(ct, key)) {
+			memdelete(key);
+			return nullptr;
 		}
 
 		key->connect("changed", callable_mp(this, &VTimelinePanel::_on_resource_changed));
