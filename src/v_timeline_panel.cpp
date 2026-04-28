@@ -341,15 +341,21 @@ namespace godot {
 			_get_visible_key_time_range(16.0f, visible_start, visible_end);
 			Ref<StyleBox> key_release_preview_style = _get_key_release_preview_style();
 			std::vector<Rect2> key_release_preview_rects;
+			struct DeferredStyleDraw {
+				Rect2 rect;
+				Ref<StyleBox> style;
+			};
+			std::vector<DeferredStyleDraw> selected_key_overlays;
 
 			for (size_t i = 0; i < _track_cache.size(); i++) {
-				const auto& ct = _track_cache[i];
+				const auto &ct = _track_cache[i];
 				if (ct.width <= 0.0f) continue;
 
 				float track_x = ct.x_offset - hscroll_value;
 				if (track_x + ct.width < 0.0f || track_x > get_size().x) continue;
 
 				float key_margin = MAX(16.0f, ct.width * MAX(ct.max_instant_key_scale, 0.0f) * 0.5f + 16.0f);
+				const float instant_lod_bucket_size = CLAMP(ct.width * MAX(ct.max_instant_key_scale, 0.0f) * 0.2f, 2.0f, 8.0f);
 				double padded_start = 0.0;
 				double padded_end = 0.0;
 				_get_visible_key_time_range(key_margin, padded_start, padded_end);
@@ -362,8 +368,61 @@ namespace godot {
 					});
 				Rect2 track_cull_rect = key_cull_rect.grow(key_margin);
 
+				struct InstantKeyBucket {
+					bool active = false;
+					int index = 0;
+					int count = 0;
+					Rect2 rect;
+					Ref<StyleBox> style;
+				};
+				InstantKeyBucket instant_key_bucket;
+				InstantKeyBucket selected_instant_key_bucket;
+				auto append_instant_key_bucket = [&](InstantKeyBucket &p_bucket, const Rect2 &p_rect, const Ref<StyleBox> &p_style, int p_bucket_index) {
+					if (p_bucket.active && p_bucket.index != p_bucket_index) {
+						if (p_bucket.style.is_valid()) {
+							draw_style_box(p_bucket.style, p_bucket.rect);
+						}
+						p_bucket.active = false;
+						p_bucket.count = 0;
+					}
+					if (!p_bucket.active) {
+						p_bucket.active = true;
+						p_bucket.index = p_bucket_index;
+						p_bucket.count = 1;
+						p_bucket.rect = p_rect;
+						p_bucket.style = p_style;
+					}
+					else {
+						p_bucket.count++;
+						p_bucket.rect = p_bucket.rect.merge(p_rect);
+						if (!p_bucket.style.is_valid()) {
+							p_bucket.style = p_style;
+						}
+					}
+				};
+				auto flush_instant_key_bucket = [&]() {
+					if (!instant_key_bucket.active) {
+						return;
+					}
+					if (instant_key_bucket.style.is_valid()) {
+						draw_style_box(instant_key_bucket.style, instant_key_bucket.rect);
+					}
+					instant_key_bucket.active = false;
+					instant_key_bucket.count = 0;
+				};
+				auto flush_selected_instant_key_bucket = [&]() {
+					if (!selected_instant_key_bucket.active) {
+						return;
+					}
+					if (selected_instant_key_bucket.style.is_valid()) {
+						selected_key_overlays.push_back({ selected_instant_key_bucket.rect, selected_instant_key_bucket.style });
+					}
+					selected_instant_key_bucket.active = false;
+					selected_instant_key_bucket.count = 0;
+				};
+
 				for (; key_it != ct.keys.end(); ++key_it) {
-					TimelineTrackKey* key = *key_it;
+					TimelineTrackKey *key = *key_it;
 					if (!key || key->is_disabled()) continue;
 
 					const double key_start = key->get_time();
@@ -375,6 +434,22 @@ namespace godot {
 						Rect2 key_rect = _get_instant_key_rect(ct, key, _key_to_y(key));
 						if (!track_cull_rect.intersects(key_rect)) continue;
 
+						const bool release_previewed = _is_key_release_previewed(key);
+						if (!release_previewed) {
+							const int bucket_index = static_cast<int>(Math::floor((key_rect.get_center().y - header_height) / instant_lod_bucket_size));
+							Ref<StyleBox> style = _get_instant_key_normal_style(key);
+							append_instant_key_bucket(instant_key_bucket, key_rect, style, bucket_index);
+							if (key->is_selected()) {
+								style = _get_instant_key_selected_style(key);
+								if (selected_instant_key_bucket.active && selected_instant_key_bucket.index != bucket_index) {
+									flush_selected_instant_key_bucket();
+								}
+								append_instant_key_bucket(selected_instant_key_bucket, key_rect, style, bucket_index);
+							}
+							continue;
+						}
+
+						flush_instant_key_bucket();
 						Ref<StyleBox> style = _get_instant_key_normal_style(key);
 						if (style.is_valid()) {
 							draw_style_box(style, key_rect);
@@ -382,14 +457,15 @@ namespace godot {
 						if (key->is_selected()) {
 							style = _get_instant_key_selected_style(key);
 							if (style.is_valid()) {
-								draw_style_box(style, key_rect);
+								selected_key_overlays.push_back({ key_rect, style });
 							}
 						}
-						if (_is_key_release_previewed(key)) {
+						if (release_previewed) {
 							key_release_preview_rects.push_back(key_rect);
 						}
 					}
 					else {
+						flush_instant_key_bucket();
 						// 防止矩形尺寸出现负数
 						if (key_start > visible_end) continue;
 
@@ -406,7 +482,7 @@ namespace godot {
 						if (key->is_selected()) {
 							style = _get_clip_key_selected_style(key);
 							if (style.is_valid()) {
-								draw_style_box(style, bar_rect);
+								selected_key_overlays.push_back({ bar_rect, style });
 							}
 						}
 						if (_is_key_release_previewed(key)) {
@@ -414,10 +490,18 @@ namespace godot {
 						}
 					}
 				}
+				flush_instant_key_bucket();
+				flush_selected_instant_key_bucket();
+			}
+
+			for (const DeferredStyleDraw &overlay : selected_key_overlays) {
+				if (overlay.style.is_valid()) {
+					draw_style_box(overlay.style, overlay.rect);
+				}
 			}
 
 			if (key_release_preview_style.is_valid()) {
-				for (const Rect2& preview_rect : key_release_preview_rects) {
+				for (const Rect2 &preview_rect : key_release_preview_rects) {
 					draw_style_box(key_release_preview_style, preview_rect);
 				}
 			}
@@ -621,6 +705,7 @@ namespace godot {
 				key->set_selected_no_signal(true);
 			}
 		}
+		_mark_minimap_key_cache_dirty();
 	}
 
 	Rect2 VTimelinePanel::_make_selection_rect(const Vector2 &p_start, const Vector2 &p_end) const {
@@ -777,6 +862,7 @@ namespace godot {
 			}
 		}
 
+		_mark_minimap_key_cache_dirty();
 		queue_redraw();
 	}
 
@@ -923,6 +1009,7 @@ namespace godot {
 				}
 			}
 			p_key->set_selected_no_signal(true);
+			_mark_minimap_key_cache_dirty();
 			queue_redraw();
 		}
 		clip_key_edge_dragging = true;
@@ -1051,6 +1138,7 @@ namespace godot {
 				}
 			}
 			p_key->set_selected_no_signal(true);
+			_mark_minimap_key_cache_dirty();
 			queue_redraw();
 		}
 		key_dragging = true;
@@ -1684,6 +1772,7 @@ namespace godot {
 	}
 
 	void VTimelinePanel::_refresh_track_key_metrics() {
+		_mark_minimap_key_cache_dirty();
 		for (CachedTrack& ct : _track_cache) {
 			std::sort(ct.keys.begin(), ct.keys.end(), [](TimelineTrackKey* p_a, TimelineTrackKey* p_b) {
 				if (p_a == p_b) return false;
@@ -1894,6 +1983,7 @@ namespace godot {
 	void VTimelinePanel::_rebuild_track_cache() {
 		_track_cache.clear();
 		_track_cache.reserve(tracks.size());
+		_mark_minimap_key_cache_dirty();
 
 		float current_x = 0.0f;
 		if (time_ruler.is_valid()) {
@@ -2351,10 +2441,69 @@ namespace godot {
 		return p_rect.position.y + ratio * p_rect.size.y;
 	}
 
+	void VTimelinePanel::_mark_minimap_key_cache_dirty() {
+		minimap_key_cache_dirty = true;
+	}
+
+	void VTimelinePanel::_rebuild_minimap_key_cache(int p_height) {
+		minimap_key_cache_height = MAX(p_height, 0);
+		minimap_key_cache.clear();
+		minimap_key_cache.resize(_track_cache.size());
+
+		if (minimap_key_cache_height <= 0) {
+			minimap_key_cache_dirty = false;
+			return;
+		}
+
+		for (MinimapTrackCache &cache : minimap_key_cache) {
+			cache.key_rows.assign(minimap_key_cache_height, 0);
+			cache.selected_key_rows.assign(minimap_key_cache_height, 0);
+		}
+
+		const double content = MAX(static_cast<double>(content_height), 1.0);
+		auto mark_key_rows = [&](MinimapTrackCache &cache, double p_start_content_y, double p_end_content_y, bool p_selected, bool p_instant) {
+			const double min_content_y = CLAMP(MIN(p_start_content_y, p_end_content_y), 0.0, content);
+			const double max_content_y = CLAMP(MAX(p_start_content_y, p_end_content_y), 0.0, content);
+			int start_row = CLAMP(static_cast<int>(Math::floor(min_content_y / content * minimap_key_cache_height)), 0, minimap_key_cache_height - 1);
+			int end_row = CLAMP(static_cast<int>(Math::floor(max_content_y / content * minimap_key_cache_height)), 0, minimap_key_cache_height - 1);
+			if (p_instant) {
+				end_row = MIN(start_row + 1, minimap_key_cache_height - 1);
+			}
+
+			for (int row = start_row; row <= end_row; row++) {
+				cache.key_rows[row] = 1;
+				if (p_selected) {
+					cache.selected_key_rows[row] = 1;
+				}
+			}
+		};
+
+		for (int i = 0; i < static_cast<int>(_track_cache.size()); i++) {
+			const CachedTrack &ct = _track_cache[i];
+			if (ct.width <= 0.0f) continue;
+
+			MinimapTrackCache &cache = minimap_key_cache[i];
+			for (TimelineTrackKey *key : ct.keys) {
+				if (!key || key->is_disabled()) continue;
+
+				const double key_start_content_y = _key_to_y(key) - header_height + vscroll_value;
+				const double key_end_content_y = key->is_instant() ? key_start_content_y : _key_end_to_y(key) - header_height + vscroll_value;
+				mark_key_rows(cache, key_start_content_y, key_end_content_y, key->is_selected(), key->is_instant());
+			}
+		}
+
+		minimap_key_cache_dirty = false;
+	}
+
 	void VTimelinePanel::_draw_minimap() {
 		const Rect2 minimap_rect = _get_minimap_rect();
 		if (minimap_rect.size.x <= 0.0f || minimap_rect.size.y <= 0.0f) {
 			return;
+		}
+
+		const int cache_height = MAX(static_cast<int>(Math::ceil(minimap_rect.size.y)), 1);
+		if (minimap_key_cache_dirty || minimap_key_cache_height != cache_height || minimap_key_cache.size() != _track_cache.size()) {
+			_rebuild_minimap_key_cache(cache_height);
 		}
 
 		draw_rect(minimap_rect, Color(0.0f, 0.0f, 0.0f, 0.28f));
@@ -2368,26 +2517,35 @@ namespace godot {
 
 		if (total_track_width > 0.0f) {
 			float track_offset = 0.0f;
-			for (const CachedTrack &ct : _track_cache) {
+			for (int i = 0; i < static_cast<int>(_track_cache.size()); i++) {
+				const CachedTrack &ct = _track_cache[i];
 				if (ct.width <= 0.0f) continue;
 
 				const float track_x = minimap_rect.position.x + (track_offset / total_track_width) * minimap_rect.size.x;
 				const float track_width = MAX((ct.width / total_track_width) * minimap_rect.size.x, 1.0f);
 				draw_line(Point2(track_x, minimap_rect.position.y), Point2(track_x, minimap_rect.position.y + minimap_rect.size.y), Color(1.0f, 1.0f, 1.0f, 0.08f));
 
-				for (TimelineTrackKey *key : ct.keys) {
-					if (!key || key->is_disabled()) continue;
-
-					const double key_start_content_y = _key_to_y(key) - header_height + vscroll_value;
-					const double key_end_content_y = key->is_instant() ? key_start_content_y : _key_end_to_y(key) - header_height + vscroll_value;
-					const float key_y = static_cast<float>(_content_y_to_minimap_y(minimap_rect, MIN(key_start_content_y, key_end_content_y)));
-					const float key_y_end = static_cast<float>(_content_y_to_minimap_y(minimap_rect, MAX(key_start_content_y, key_end_content_y)));
-					const float key_height = key->is_instant() ? 2.0f : MAX(key_y_end - key_y, 1.0f);
-					const float key_x = track_x + 1.0f;
-					const float key_width = MAX(track_width - 2.0f, 1.0f);
-					const Color key_color = key->is_selected() ? Color(1.0f, 1.0f, 1.0f, 0.82f) : Color(1.0f, 1.0f, 1.0f, 0.42f);
-					draw_rect(Rect2(Vector2(key_x, key_y), Vector2(key_width, key_height)), key_color);
-				}
+				const MinimapTrackCache &cache = minimap_key_cache[i];
+				const float row_height = minimap_rect.size.y / static_cast<float>(cache_height);
+				const float key_x = track_x + 1.0f;
+				const float key_width = MAX(track_width - 2.0f, 1.0f);
+				auto draw_cached_rows = [&](const std::vector<uint8_t> &p_rows, const Color &p_color) {
+					int run_start = -1;
+					for (int row = 0; row <= cache_height; row++) {
+						const bool active = row < cache_height && p_rows[row] != 0;
+						if (active && run_start < 0) {
+							run_start = row;
+						}
+						else if (!active && run_start >= 0) {
+							const float y = minimap_rect.position.y + row_height * run_start;
+							const float height = MAX(row_height * (row - run_start), 1.0f);
+							draw_rect(Rect2(Vector2(key_x, y), Vector2(key_width, height)), p_color);
+							run_start = -1;
+						}
+					}
+				};
+				draw_cached_rows(cache.key_rows, Color(1.0f, 1.0f, 1.0f, 0.42f));
+				draw_cached_rows(cache.selected_key_rows, Color(1.0f, 1.0f, 1.0f, 0.82f));
 
 				track_offset += ct.width;
 			}
@@ -3012,6 +3170,7 @@ namespace godot {
 			ct.max_instant_key_scale = MAX(ct.max_instant_key_scale, _get_instant_key_scale(key));
 		}
 
+		_mark_minimap_key_cache_dirty();
 		queue_redraw();
 		return key;
 	}
@@ -3054,6 +3213,7 @@ namespace godot {
 		keys.clear();
 		_track_cache[p_track_index].max_key_length = 0.0;
 		_track_cache[p_track_index].max_instant_key_scale = 0.4f;
+		_mark_minimap_key_cache_dirty();
 		queue_redraw();
 	}
 
@@ -3069,6 +3229,7 @@ namespace godot {
 			ct.max_key_length = 0.0;
 			ct.max_instant_key_scale = 0.4f;
 		}
+		_mark_minimap_key_cache_dirty();
 		queue_redraw();
 	}
 

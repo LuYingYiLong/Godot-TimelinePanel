@@ -9,6 +9,7 @@
 #include <godot_cpp/classes/v_scroll_bar.hpp>
 #include <godot_cpp/core/binder_common.hpp>
 #include <godot_cpp/core/gdvirtual.gen.inc>
+#include <cstdint>
 #include <unordered_set>
 #include <vector>
 
@@ -125,6 +126,7 @@ namespace godot {
 		int minimap_width = 80;
 		bool minimap_dragging = false;
 		bool minimap_dragging_viewport = false;
+		bool minimap_key_cache_dirty = true;
 		double minimap_drag_scroll_origin = 0.0;
 		float minimap_drag_y_origin = 0.0f;
 
@@ -170,6 +172,13 @@ namespace godot {
 			double original_time = 0.0;
 		};
 		std::vector<DraggedKey> dragged_keys;
+
+		struct MinimapTrackCache {
+			std::vector<uint8_t> key_rows;
+			std::vector<uint8_t> selected_key_rows;
+		};
+		std::vector<MinimapTrackCache> minimap_key_cache;
+		int minimap_key_cache_height = 0;
 
 		struct ResizedClipKey {
 			TimelineTrackKey *key = nullptr;
@@ -225,6 +234,8 @@ namespace godot {
 		Rect2 _get_minimap_viewport_rect() const;
 		double _indicator_time_to_content_y(double p_time) const;
 		double _content_y_to_minimap_y(const Rect2 &p_rect, double p_content_y) const;
+		void _mark_minimap_key_cache_dirty();
+		void _rebuild_minimap_key_cache(int p_height);
 		void _draw_minimap();
 		bool _begin_minimap_drag(const Vector2 &p_position);
 		void _update_minimap_drag(const Vector2 &p_position);
