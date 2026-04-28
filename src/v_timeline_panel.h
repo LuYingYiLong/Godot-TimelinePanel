@@ -1,10 +1,14 @@
 #ifndef V_TIMELINE_PANEL_H
 #define V_TIMELINE_PANEL_H
 
+#include "components/timeline_track_key.h"
+
 #include <godot_cpp/classes/control.hpp>
 #include <godot_cpp/classes/input_event.hpp>
 #include <godot_cpp/classes/h_scroll_bar.hpp>
 #include <godot_cpp/classes/v_scroll_bar.hpp>
+#include <godot_cpp/core/binder_common.hpp>
+#include <godot_cpp/core/gdvirtual.gen.inc>
 #include <unordered_set>
 #include <vector>
 
@@ -117,6 +121,12 @@ namespace godot {
 		ScrollMode horizontal_scroll_mode = SCROLL_MODE_AUTO;
 		ScrollMode vertical_scroll_mode = SCROLL_MODE_AUTO;
 		int deadzone = 0;
+		bool draw_minimap = true;
+		int minimap_width = 80;
+		bool minimap_dragging = false;
+		bool minimap_dragging_viewport = false;
+		double minimap_drag_scroll_origin = 0.0;
+		float minimap_drag_y_origin = 0.0f;
 
 		Vector2 drag_speed;
 		Vector2 drag_accum;
@@ -130,18 +140,22 @@ namespace godot {
 
 		bool selecting = false;
 		bool select_pending = false;
+		bool right_selecting = false;
 		bool key_dragging = false;
 		bool key_drag_moved = false;
 		bool allow_key_cross_track_move = true;
 		bool key_snap_enabled = true;
 		bool clip_key_edge_edit_enabled = true;
 		bool allow_unselected_key_edit = true;
+		bool allow_right_mouse_selection = false;
 		bool clip_key_edge_dragging = false;
 		bool clip_key_edge_drag_moved = false;
 		float long_press_time = 0.4f;
 		float select_timer = 0.0f;
 		Vector2 select_start;
 		Vector2 select_end;
+		Vector2 right_select_start;
+		Vector2 right_select_end;
 		double key_drag_start_value = 0.0;
 		int key_drag_anchor_track = -1;
 		TimelineTrackKey *clip_key_edge_drag_key = nullptr;
@@ -168,9 +182,18 @@ namespace godot {
 		bool playhead_dragging = false;
 
 		void _collect_selected_keys();
+		Rect2 _make_selection_rect(const Vector2 &p_start, const Vector2 &p_end) const;
+		TypedArray<TimelineTrackKey> _get_keys_in_rect(const Rect2 &p_rect) const;
+		bool _try_handle_selection_rect(const Rect2 &p_rect, const TypedArray<TimelineTrackKey> &p_keys, int p_mouse_button);
+		void _finish_right_mouse_selection();
 		bool _find_selected_key_at_position(const Vector2& p_position, int& r_track_index, TimelineTrackKey*& r_key) const;
 		int _get_track_index_at_x(float p_x) const;
+		int _get_track_header_index_at_x(float p_x) const;
+		void _select_track_keys(int p_track_index);
+		void _update_selection_auto_scroll(double p_delta);
+		void _stop_internal_process_if_idle();
 		double _position_to_key_value(double p_y) const;
+		double _get_playhead_drag_time(double p_y) const;
 		bool _find_clip_key_edge_at_position(const Vector2 &p_position, int &r_track_index, TimelineTrackKey *&r_key, ClipKeyEditEdge &r_edge) const;
 		void _update_clip_key_edge_cursor(const Vector2 &p_position);
 		void _begin_clip_key_edge_drag(TimelineTrackKey *p_key, ClipKeyEditEdge p_edge);
@@ -197,6 +220,16 @@ namespace godot {
 		void _draw_grid_beat(float p_header_width);
 		void _draw_grid_frame(float p_header_width);
 		void _draw_grid_time(float p_header_width);
+		bool _is_minimap_visible() const;
+		Rect2 _get_minimap_rect() const;
+		Rect2 _get_minimap_viewport_rect() const;
+		double _indicator_time_to_content_y(double p_time) const;
+		double _content_y_to_minimap_y(const Rect2 &p_rect, double p_content_y) const;
+		void _draw_minimap();
+		bool _begin_minimap_drag(const Vector2 &p_position);
+		void _update_minimap_drag(const Vector2 &p_position);
+		void _finish_minimap_drag();
+		void _scroll_minimap_to_position(float p_y);
 		float _calculate_header_width() const;
 		float _calculate_grid_height() const;
 
@@ -240,6 +273,7 @@ namespace godot {
 		Ref<StyleBox> _get_clip_key_normal_style(const TimelineTrackKey *p_key) const;
 		Ref<StyleBox> _get_clip_key_selected_style(const TimelineTrackKey *p_key) const;
 		Ref<StyleBox> _get_key_release_preview_style() const;
+		String _format_indicator_time(double p_time) const;
 
 		struct StyleCache {
 			Ref<StyleBox> instant_key_normal;
@@ -263,6 +297,9 @@ namespace godot {
 		static void _bind_methods();
 		void _notification(int p_what);
 		void _validate_property(PropertyInfo& p_property) const;
+
+		GDVIRTUAL3RC(bool, _should_handle_selection_rect, Rect2, TypedArray<TimelineTrackKey>, int)
+		GDVIRTUAL3(_handle_selection_rect, Rect2, TypedArray<TimelineTrackKey>, int)
 
 	public:
 		VTimelinePanel();
@@ -380,6 +417,12 @@ namespace godot {
 		void set_deadzone(int p_deadzone);
 		int get_deadzone() const;
 
+		void set_draw_minimap(bool p_enabled);
+		bool is_drawing_minimap() const;
+
+		void set_minimap_width(int p_width);
+		int get_minimap_width() const;
+
 		void set_icon_max_width(const float p_width);
 		float get_icon_max_width() const;
 
@@ -415,6 +458,9 @@ namespace godot {
 
 		void set_allow_unselected_key_edit(bool p_enabled);
 		bool get_allow_unselected_key_edit() const;
+
+		void set_allow_right_mouse_selection(bool p_enabled);
+		bool get_allow_right_mouse_selection() const;
 	};
 }
 

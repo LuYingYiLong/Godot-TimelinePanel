@@ -121,7 +121,7 @@ namespace godot {
 		ClassDB::bind_method(D_METHOD("get_bar_number_direction"), &VTimelinePanel::get_bar_number_direction);
 		ADD_PROPERTY(PropertyInfo(Variant::INT, "bar_number_direction", PROPERTY_HINT_ENUM, "Top Down,Bottom Up"), "set_bar_number_direction", "get_bar_number_direction");
 
-		ClassDB::bind_method(D_METHOD("set_beat_format", "direction"), &VTimelinePanel::set_beat_format);
+		ClassDB::bind_method(D_METHOD("set_beat_format", "format"), &VTimelinePanel::set_beat_format);
 		ClassDB::bind_method(D_METHOD("get_beat_format"), &VTimelinePanel::get_beat_format);
 		ADD_PROPERTY(PropertyInfo(Variant::INT, "beat_format", PROPERTY_HINT_ENUM, "Beat Bar"), "set_beat_format", "get_beat_format");
 		ADD_GROUP("", "");
@@ -184,6 +184,16 @@ namespace godot {
 		ADD_PROPERTY(PropertyInfo(Variant::INT, "scroll_deadzone"), "set_deadzone", "get_deadzone");
 		ADD_GROUP("", "");
 
+		ADD_GROUP("Minimap", "minimap_");
+		ClassDB::bind_method(D_METHOD("set_draw_minimap", "enabled"), &VTimelinePanel::set_draw_minimap);
+		ClassDB::bind_method(D_METHOD("is_drawing_minimap"), &VTimelinePanel::is_drawing_minimap);
+		ADD_PROPERTY(PropertyInfo(Variant::BOOL, "minimap_draw", PROPERTY_HINT_GROUP_ENABLE), "set_draw_minimap", "is_drawing_minimap");
+
+		ClassDB::bind_method(D_METHOD("set_minimap_width", "width"), &VTimelinePanel::set_minimap_width);
+		ClassDB::bind_method(D_METHOD("get_minimap_width"), &VTimelinePanel::get_minimap_width);
+		ADD_PROPERTY(PropertyInfo(Variant::INT, "minimap_width", PROPERTY_HINT_RANGE, "0,512,1,or_greater,suffix:px"), "set_minimap_width", "get_minimap_width");
+		ADD_GROUP("", "");
+
 		ADD_GROUP("Key Editing", "");
 		ClassDB::bind_method(D_METHOD("set_allow_key_cross_track_move", "enabled"), &VTimelinePanel::set_allow_key_cross_track_move);
 		ClassDB::bind_method(D_METHOD("get_allow_key_cross_track_move"), &VTimelinePanel::get_allow_key_cross_track_move);
@@ -197,7 +207,13 @@ namespace godot {
 		ClassDB::bind_method(D_METHOD("set_allow_unselected_key_edit", "enabled"), &VTimelinePanel::set_allow_unselected_key_edit);
 		ClassDB::bind_method(D_METHOD("get_allow_unselected_key_edit"), &VTimelinePanel::get_allow_unselected_key_edit);
 		ADD_PROPERTY(PropertyInfo(Variant::BOOL, "allow_unselected_key_edit"), "set_allow_unselected_key_edit", "get_allow_unselected_key_edit");
+		ClassDB::bind_method(D_METHOD("set_allow_right_mouse_selection", "enabled"), &VTimelinePanel::set_allow_right_mouse_selection);
+		ClassDB::bind_method(D_METHOD("get_allow_right_mouse_selection"), &VTimelinePanel::get_allow_right_mouse_selection);
+		ADD_PROPERTY(PropertyInfo(Variant::BOOL, "allow_right_mouse_selection"), "set_allow_right_mouse_selection", "get_allow_right_mouse_selection");
 		ADD_GROUP("", "");
+
+		GDVIRTUAL_BIND(_should_handle_selection_rect, "rect", "keys", "mouse_button");
+		GDVIRTUAL_BIND(_handle_selection_rect, "rect", "keys", "mouse_button");
 
 		ADD_GROUP("Style overrides", "");
 		ADD_SUBGROUP("Constants", "");
@@ -236,6 +252,12 @@ namespace godot {
 
 		ADD_SIGNAL(MethodInfo("scroll_started"));
 		ADD_SIGNAL(MethodInfo("scroll_ended"));
+		ADD_SIGNAL(MethodInfo("right_mouse_selection_finished",
+			PropertyInfo(Variant::RECT2, "rect"),
+			PropertyInfo(Variant::ARRAY, "keys", PROPERTY_HINT_ARRAY_TYPE, "TimelineTrackKey")));
+		ADD_SIGNAL(MethodInfo("time_ruler_right_clicked",
+			PropertyInfo(Variant::FLOAT, "time"),
+			PropertyInfo(Variant::VECTOR2, "position")));
 	}
 
 	void VTimelinePanel::_notification(int p_what) {
@@ -252,8 +274,9 @@ namespace godot {
 		} break;
 
 		case NOTIFICATION_INTERNAL_PROCESS: {
+			const double delta = get_process_delta_time();
 			if (select_pending) {
-				select_timer += get_process_delta_time();
+				select_timer += delta;
 				if (select_timer >= long_press_time && !beyond_deadzone) {
 					select_pending = false;
 					selecting = true;
@@ -263,6 +286,8 @@ namespace godot {
 					queue_redraw();
 				}
 			}
+			_update_selection_auto_scroll(delta);
+			_stop_internal_process_if_idle();
 		} break;
 
 		case NOTIFICATION_DRAW: {
@@ -440,16 +465,12 @@ namespace godot {
 						break;
 					}
 					Rect2 header_rect = Rect2(Vector2(0.0f, current_position - 8.0f), Vector2(time_ruler->get_width(), 16.0f));
-					indicator->draw(get_canvas_item(), header_rect, String::num(current_time), header_width, false);
+					indicator->draw(get_canvas_item(), header_rect, _format_indicator_time(time), header_width, false);
 				}
 			}
 
-			if (selecting) {
-				Rect2 sel_rect;
-				sel_rect.position.x = Math::min(select_start.x, select_end.x);
-				sel_rect.position.y = Math::min(select_start.y, select_end.y);
-				sel_rect.size.x = Math::abs(select_end.x - select_start.x);
-				sel_rect.size.y = Math::abs(select_end.y - select_start.y);
+			if (selecting || right_selecting) {
+				Rect2 sel_rect = selecting ? _make_selection_rect(select_start, select_end) : _make_selection_rect(right_select_start, right_select_end);
 
 				Ref<StyleBox> style = get_selection_rect_style();
 				if (style.is_valid()) {
@@ -482,6 +503,7 @@ namespace godot {
 			}
 
 			draw_line(Point2(start_pos.x, header_height), Point2(start_pos.x, get_size().y), separator_color, separator_width);
+			_draw_minimap();
 		} break;
 		}
 	}
@@ -579,7 +601,12 @@ namespace godot {
 	}
 
 	void VTimelinePanel::_collect_selected_keys() {
-		// 先清空所有已选状态
+		const Rect2 sel_rect = _make_selection_rect(select_start, select_end);
+		const TypedArray<TimelineTrackKey> selected_keys = _get_keys_in_rect(sel_rect);
+		if (_try_handle_selection_rect(sel_rect, selected_keys, static_cast<int>(MouseButton::MOUSE_BUTTON_LEFT))) {
+			return;
+		}
+
 		for (auto& ct : _track_cache) {
 			for (TimelineTrackKey* key : ct.keys) {
 				if (key) {
@@ -588,69 +615,73 @@ namespace godot {
 			}
 		}
 
-		// 构造选择矩形
-		Rect2 sel_rect;
-		sel_rect.position.x = Math::min(select_start.x, select_end.x);
-		sel_rect.position.y = Math::min(select_start.y, select_end.y);
-		sel_rect.size.x = Math::abs(select_end.x - select_start.x);
-		sel_rect.size.y = Math::abs(select_end.y - select_start.y);
-
-		// 接近点击时，扩大为 4x4 像素点选区域
-		if (sel_rect.size.x < 2.0f && sel_rect.size.y < 2.0f) {
-			sel_rect = Rect2(select_start - Vector2(2, 2), Vector2(4, 4));
+		for (int i = 0; i < selected_keys.size(); i++) {
+			TimelineTrackKey *key = VariantCaster<TimelineTrackKey *>::cast(selected_keys[i]);
+			if (key) {
+				key->set_selected_no_signal(true);
+			}
 		}
+	}
 
-		// 遍历所有键，判断是否与选择矩形相交
-		for (size_t i = 0; i < _track_cache.size(); i++) {
-			const auto& ct = _track_cache[i];
+	Rect2 VTimelinePanel::_make_selection_rect(const Vector2 &p_start, const Vector2 &p_end) const {
+		Rect2 sel_rect;
+		sel_rect.position.x = Math::min(p_start.x, p_end.x);
+		sel_rect.position.y = Math::min(p_start.y, p_end.y);
+		sel_rect.size.x = Math::abs(p_end.x - p_start.x);
+		sel_rect.size.y = Math::abs(p_end.y - p_start.y);
+
+		if (sel_rect.size.x < 2.0f && sel_rect.size.y < 2.0f) {
+			sel_rect = Rect2(p_start - Vector2(2, 2), Vector2(4, 4));
+		}
+		return sel_rect;
+	}
+
+	TypedArray<TimelineTrackKey> VTimelinePanel::_get_keys_in_rect(const Rect2 &p_rect) const {
+		TypedArray<TimelineTrackKey> keys;
+		for (const CachedTrack &ct : _track_cache) {
 			if (ct.width <= 0.0f) continue;
 
-			for (TimelineTrackKey* key : ct.keys) {
+			for (TimelineTrackKey *key : ct.keys) {
 				if (!key || key->is_disabled()) continue;
-
-				float y = 0.0f;
-				float y_end = 0.0f;
-				switch (counting_unit) {
-				case FRAME: {
-					y = _frame_to_y(static_cast<int64_t>(key->get_time()));
-					y_end = _frame_to_y(static_cast<int64_t>(key->get_time() + key->get_length()));
-				} break;
-				case BEAT:
-				case TIME:
-				default: {
-					y = _time_to_y(key->get_time());
-					y_end = _time_to_y(key->get_time() + key->get_length());
-				} break;
-				}
 
 				Rect2 key_rect;
 				if (key->is_instant()) {
-					float key_scale = 0.4f;
-					if (style_cache.instant_key_scale != 0.4f) {
-						key_scale = style_cache.instant_key_scale;
-					}
-					else {
-						key_scale = key->get_instant_key_scale();
-					}
-					float key_size = ct.width * key_scale;
-					float pos_x = ct.x_offset - hscroll_value + (ct.width - key_size) * 0.5f;
-					float pos_y = y - key_size * 0.5f;
-					key_rect = Rect2(pos_x, pos_y, key_size, key_size);
+					key_rect = _get_instant_key_rect(ct, key, _key_to_y(key));
 				}
 				else {
-					if (y_end < y) {
-						key_rect = Rect2(ct.x_offset - hscroll_value, y_end, ct.width, y - y_end);
-					}
-					else {
-						key_rect = Rect2(ct.x_offset - hscroll_value, y, ct.width, y_end - y);
-					}
+					key_rect = _get_clip_key_rect(ct, _key_to_y(key), _key_end_to_y(key));
 				}
 
-				if (sel_rect.intersects(key_rect)) {
-					key->set_selected_no_signal(true);
+				if (p_rect.intersects(key_rect)) {
+					keys.append(key);
 				}
 			}
 		}
+		return keys;
+	}
+
+	bool VTimelinePanel::_try_handle_selection_rect(const Rect2 &p_rect, const TypedArray<TimelineTrackKey> &p_keys, int p_mouse_button) {
+		bool should_handle = false;
+		if (GDVIRTUAL_CALL(_should_handle_selection_rect, p_rect, p_keys, p_mouse_button, should_handle) && should_handle) {
+			GDVIRTUAL_CALL(_handle_selection_rect, p_rect, p_keys, p_mouse_button);
+			return true;
+		}
+		return false;
+	}
+
+	void VTimelinePanel::_finish_right_mouse_selection() {
+		if (!right_selecting) {
+			return;
+		}
+
+		right_selecting = false;
+		const Rect2 selection_rect = _make_selection_rect(right_select_start, right_select_end);
+		const TypedArray<TimelineTrackKey> selected_keys = _get_keys_in_rect(selection_rect);
+		if (!_try_handle_selection_rect(selection_rect, selected_keys, static_cast<int>(MouseButton::MOUSE_BUTTON_RIGHT))) {
+			emit_signal("right_mouse_selection_finished", selection_rect, selected_keys);
+		}
+		queue_redraw();
+		_stop_internal_process_if_idle();
 	}
 
 	bool VTimelinePanel::_find_selected_key_at_position(const Vector2& p_position, int& r_track_index, TimelineTrackKey*& r_key) const {
@@ -706,11 +737,113 @@ namespace godot {
 		return last_valid;
 	}
 
+	int VTimelinePanel::_get_track_header_index_at_x(float p_x) const {
+		float x = 0.0f;
+		if (time_ruler.is_valid()) {
+			x += time_ruler->get_width();
+		}
+
+		for (int i = 0; i < static_cast<int>(_track_cache.size()); i++) {
+			const CachedTrack &ct = _track_cache[i];
+			if (ct.width <= 0.0f) continue;
+
+			const float left = x;
+			const float right = left + ct.width;
+			if (p_x >= left && p_x <= right) {
+				return i;
+			}
+			x = right;
+		}
+
+		return -1;
+	}
+
+	void VTimelinePanel::_select_track_keys(int p_track_index) {
+		if (p_track_index < 0 || p_track_index >= static_cast<int>(_track_cache.size())) {
+			return;
+		}
+
+		for (CachedTrack &ct : _track_cache) {
+			for (TimelineTrackKey *key : ct.keys) {
+				if (key) {
+					key->set_selected_no_signal(false);
+				}
+			}
+		}
+
+		for (TimelineTrackKey *key : _track_cache[p_track_index].keys) {
+			if (key && !key->is_disabled()) {
+				key->set_selected_no_signal(true);
+			}
+		}
+
+		queue_redraw();
+	}
+
+	void VTimelinePanel::_update_selection_auto_scroll(double p_delta) {
+		if ((!selecting && !right_selecting) || vscroll == nullptr || !vscroll->is_visible() || vertical_scroll_mode == SCROLL_MODE_DISABLED) {
+			return;
+		}
+
+		Vector2 *selection_start = right_selecting ? &right_select_start : &select_start;
+		const Vector2 *selection_end = right_selecting ? &right_select_end : &select_end;
+		const float hscroll_height = hscroll != nullptr && hscroll->is_visible() ? hscroll->get_combined_minimum_size().y : 0.0f;
+		const float top = header_height;
+		const float bottom = get_size().y - hscroll_height;
+		if (bottom <= top) {
+			return;
+		}
+
+		const float margin = CLAMP((bottom - top) * 0.12f, 24.0f, 64.0f);
+		const float max_speed = 720.0f;
+		float speed = 0.0f;
+		if (selection_end->y < top + margin) {
+			speed = -CLAMP((top + margin - selection_end->y) / margin, 0.0f, 1.0f) * max_speed;
+		}
+		else if (selection_end->y > bottom - margin) {
+			speed = CLAMP((selection_end->y - (bottom - margin)) / margin, 0.0f, 1.0f) * max_speed;
+		}
+
+		if (speed == 0.0f) {
+			return;
+		}
+
+		const double before = vscroll->get_value();
+		_scroll(vscroll, speed * p_delta);
+		const double after = vscroll->get_value();
+		if (Math::is_equal_approx(before, after)) {
+			return;
+		}
+
+		selection_start->y -= static_cast<float>(after - before);
+		queue_redraw();
+	}
+
+	void VTimelinePanel::_stop_internal_process_if_idle() {
+		if (!select_pending && !selecting && !right_selecting && !drag_touching && !drag_touching_deaccel) {
+			set_process_internal(false);
+		}
+	}
+
 	double VTimelinePanel::_position_to_key_value(double p_y) const {
 		if (counting_unit == FRAME) {
 			return static_cast<double>(_y_to_frame(p_y));
 		}
 		return _y_to_time(p_y);
+	}
+
+	double VTimelinePanel::_get_playhead_drag_time(double p_y) const {
+		double time = get_time_from_position(p_y);
+		if (key_snap_enabled) {
+			if (counting_unit == FRAME) {
+				const int safe_fps = MAX(fps, 1);
+				time = static_cast<double>(Math::floor(time * safe_fps + 0.5)) / safe_fps;
+			}
+			else {
+				time = _snap_key_time(time);
+			}
+		}
+		return CLAMP(time, 0.0, duration);
 	}
 
 	bool VTimelinePanel::_find_clip_key_edge_at_position(const Vector2 &p_position, int &r_track_index, TimelineTrackKey *&r_key, ClipKeyEditEdge &r_edge) const {
@@ -1698,6 +1831,60 @@ namespace godot {
 		return style_cache.key_release_preview_fallback;
 	}
 
+	String VTimelinePanel::_format_indicator_time(double p_time) const {
+		switch (counting_unit) {
+		case FRAME: {
+			const int safe_fps = MAX(fps, 1);
+			const int64_t frame = static_cast<int64_t>(p_time * safe_fps);
+			return String::num_int64(frame);
+		}
+		case BEAT: {
+			switch (beat_format) {
+			case BEAT_BAR:
+			default: {
+				const int subdivisions = MAX(beats_per_bar, 1);
+				double beat = _time_to_beat(p_time);
+				if (beat < 0.0) {
+					beat = 0.0;
+				}
+
+				const double beat_epsilon = 0.0001;
+				int64_t whole_beat = static_cast<int64_t>(Math::floor(beat + beat_epsilon));
+				int64_t subdivision = static_cast<int64_t>(Math::floor((beat - static_cast<double>(whole_beat)) * subdivisions + beat_epsilon));
+				if (subdivision >= subdivisions) {
+					whole_beat += subdivision / subdivisions;
+					subdivision %= subdivisions;
+				}
+				if (subdivision < 0) {
+					subdivision = 0;
+				}
+
+				return String::num_int64(whole_beat) + "+" + String::num_int64(subdivision);
+			}
+			}
+		}
+		case TIME:
+		default:
+			switch (time_format) {
+			case HH_MM_SS:
+				return String::num_int64(static_cast<int>(p_time) / 3600) + ":" +
+					String::num_int64((static_cast<int>(p_time) % 3600) / 60).pad_zeros(2) + ":" +
+					String::num_int64(static_cast<int>(p_time) % 60).pad_zeros(2);
+			case MM_SS_MS: {
+				String text = String::num_int64(static_cast<int>(p_time) / 60) + ":" +
+					String::num_int64(static_cast<int>(p_time) % 60).pad_zeros(2);
+				if (show_milliseconds) {
+					text += "." + String::num_int64(static_cast<int64_t>((p_time - static_cast<int>(p_time)) * 100)).pad_zeros(2);
+				}
+				return text;
+			}
+			case SEC:
+			default:
+				return String::num(p_time, (show_milliseconds ? 2 : 0)) + "s";
+			}
+		}
+	}
+
 	void VTimelinePanel::_on_resource_changed() {
 		_refresh_track_key_metrics();
 		queue_redraw();
@@ -1739,20 +1926,23 @@ namespace godot {
 
 		float content_width = _calculate_header_width();
 
-		bool h_scroll_show = horizontal_scroll_mode == SCROLL_MODE_SHOW_ALWAYS ||
-			(horizontal_scroll_mode == SCROLL_MODE_AUTO && content_width > size.x);
 		bool v_scroll_show = vertical_scroll_mode == SCROLL_MODE_SHOW_ALWAYS ||
 			(vertical_scroll_mode == SCROLL_MODE_AUTO && content_height > size.y - header_height);
+		const float visible_minimap_width = draw_minimap && minimap_width > 0 && v_scroll_show ? static_cast<float>(minimap_width) : 0.0f;
+		const float vertical_side_width = v_scroll_show ? vmin.x + visible_minimap_width : 0.0f;
+		const float horizontal_available_width = MAX(size.x - vertical_side_width, 0.0f);
+		bool h_scroll_show = horizontal_scroll_mode == SCROLL_MODE_SHOW_ALWAYS ||
+			(horizontal_scroll_mode == SCROLL_MODE_AUTO && content_width > horizontal_available_width);
 
 		updating_scroll = true;
 
 		if (h_scroll_show) {
 			hscroll->set_anchor_and_offset(SIDE_LEFT, ANCHOR_BEGIN, 0);
-			hscroll->set_anchor_and_offset(SIDE_RIGHT, ANCHOR_END, v_scroll_show ? -vmin.x : 0);
+			hscroll->set_anchor_and_offset(SIDE_RIGHT, ANCHOR_END, -vertical_side_width);
 			hscroll->set_anchor_and_offset(SIDE_TOP, ANCHOR_END, -hmin.y);
 			hscroll->set_anchor_and_offset(SIDE_BOTTOM, ANCHOR_END, 0);
 			hscroll->set_max(content_width);
-			hscroll->set_page(v_scroll_show ? size.x - vmin.x : size.x);
+			hscroll->set_page(horizontal_available_width);
 			hscroll->show();
 		}
 		else {
@@ -2100,6 +2290,196 @@ namespace godot {
 		}
 	}
 
+	bool VTimelinePanel::_is_minimap_visible() const {
+		return draw_minimap && minimap_width > 0 && vscroll != nullptr && vscroll->is_visible();
+	}
+
+	Rect2 VTimelinePanel::_get_minimap_rect() const {
+		if (!_is_minimap_visible()) {
+			return Rect2();
+		}
+
+		const Size2 size = get_size();
+		const float hscroll_height = hscroll != nullptr && hscroll->is_visible() ? hscroll->get_combined_minimum_size().y : 0.0f;
+		const float vscroll_width = vscroll != nullptr && vscroll->is_visible() ? vscroll->get_combined_minimum_size().x : 0.0f;
+		const float width = static_cast<float>(minimap_width);
+		const float height = MAX(size.y - header_height - hscroll_height, 0.0f);
+		const float x = size.x - vscroll_width - width;
+		return Rect2(Vector2(x, header_height), Vector2(width, height));
+	}
+
+	Rect2 VTimelinePanel::_get_minimap_viewport_rect() const {
+		const Rect2 minimap_rect = _get_minimap_rect();
+		if (minimap_rect.size.y <= 0.0f || vscroll == nullptr) {
+			return Rect2();
+		}
+
+		const double scroll_max = MAX(vscroll->get_max(), 0.0);
+		const double scroll_page = MAX(vscroll->get_page(), 0.0);
+		if (scroll_max <= 0.0 || scroll_page >= scroll_max) {
+			return minimap_rect;
+		}
+
+		const float min_height = MIN(12.0f, minimap_rect.size.y);
+		const float viewport_height = CLAMP(static_cast<float>(scroll_page / scroll_max) * minimap_rect.size.y, min_height, minimap_rect.size.y);
+		const double scroll_range = MAX(scroll_max - scroll_page, 0.0);
+		const float minimap_range = MAX(minimap_rect.size.y - viewport_height, 0.0f);
+		const float offset = scroll_range > 0.0 ? static_cast<float>(CLAMP(vscroll_value, 0.0, scroll_range) / scroll_range) * minimap_range : 0.0f;
+		return Rect2(Vector2(minimap_rect.position.x, minimap_rect.position.y + offset), Vector2(minimap_rect.size.x, viewport_height));
+	}
+
+	double VTimelinePanel::_indicator_time_to_content_y(double p_time) const {
+		double y = header_height;
+		switch (counting_unit) {
+		case FRAME: {
+			const int safe_fps = MAX(fps, 1);
+			y = _frame_to_y(static_cast<int64_t>(p_time * safe_fps));
+			break;
+		}
+		case BEAT:
+		case TIME:
+		default:
+			y = _time_to_y(p_time);
+			break;
+		}
+		return y - header_height + vscroll_value;
+	}
+
+	double VTimelinePanel::_content_y_to_minimap_y(const Rect2 &p_rect, double p_content_y) const {
+		const double content = MAX(static_cast<double>(content_height), 1.0);
+		const double ratio = CLAMP(p_content_y / content, 0.0, 1.0);
+		return p_rect.position.y + ratio * p_rect.size.y;
+	}
+
+	void VTimelinePanel::_draw_minimap() {
+		const Rect2 minimap_rect = _get_minimap_rect();
+		if (minimap_rect.size.x <= 0.0f || minimap_rect.size.y <= 0.0f) {
+			return;
+		}
+
+		draw_rect(minimap_rect, Color(0.0f, 0.0f, 0.0f, 0.28f));
+
+		float total_track_width = 0.0f;
+		for (const CachedTrack &ct : _track_cache) {
+			if (ct.width > 0.0f) {
+				total_track_width += ct.width;
+			}
+		}
+
+		if (total_track_width > 0.0f) {
+			float track_offset = 0.0f;
+			for (const CachedTrack &ct : _track_cache) {
+				if (ct.width <= 0.0f) continue;
+
+				const float track_x = minimap_rect.position.x + (track_offset / total_track_width) * minimap_rect.size.x;
+				const float track_width = MAX((ct.width / total_track_width) * minimap_rect.size.x, 1.0f);
+				draw_line(Point2(track_x, minimap_rect.position.y), Point2(track_x, minimap_rect.position.y + minimap_rect.size.y), Color(1.0f, 1.0f, 1.0f, 0.08f));
+
+				for (TimelineTrackKey *key : ct.keys) {
+					if (!key || key->is_disabled()) continue;
+
+					const double key_start_content_y = _key_to_y(key) - header_height + vscroll_value;
+					const double key_end_content_y = key->is_instant() ? key_start_content_y : _key_end_to_y(key) - header_height + vscroll_value;
+					const float key_y = static_cast<float>(_content_y_to_minimap_y(minimap_rect, MIN(key_start_content_y, key_end_content_y)));
+					const float key_y_end = static_cast<float>(_content_y_to_minimap_y(minimap_rect, MAX(key_start_content_y, key_end_content_y)));
+					const float key_height = key->is_instant() ? 2.0f : MAX(key_y_end - key_y, 1.0f);
+					const float key_x = track_x + 1.0f;
+					const float key_width = MAX(track_width - 2.0f, 1.0f);
+					const Color key_color = key->is_selected() ? Color(1.0f, 1.0f, 1.0f, 0.82f) : Color(1.0f, 1.0f, 1.0f, 0.42f);
+					draw_rect(Rect2(Vector2(key_x, key_y), Vector2(key_width, key_height)), key_color);
+				}
+
+				track_offset += ct.width;
+			}
+		}
+
+		for (int i = 0; i < markers.size(); i++) {
+			Ref<TimelineMarker> marker = markers[i];
+			if (marker.is_null()) continue;
+
+			Color marker_color = marker->get_line_color();
+			marker_color.a = MAX(marker_color.a, 0.75f);
+			const float y = static_cast<float>(_content_y_to_minimap_y(minimap_rect, _indicator_time_to_content_y(marker->get_time())));
+			draw_line(Point2(minimap_rect.position.x, y), Point2(minimap_rect.position.x + minimap_rect.size.x, y), marker_color, 1.0f);
+		}
+
+		if (playhead.is_valid()) {
+			Color playhead_color = playhead->get_line_color();
+			playhead_color.a = MAX(playhead_color.a, 0.9f);
+			const float y = static_cast<float>(_content_y_to_minimap_y(minimap_rect, _indicator_time_to_content_y(current_time)));
+			draw_line(Point2(minimap_rect.position.x, y), Point2(minimap_rect.position.x + minimap_rect.size.x, y), playhead_color, 2.0f);
+		}
+
+		const Rect2 viewport_rect = _get_minimap_viewport_rect();
+		if (viewport_rect.size.y > 0.0f) {
+			draw_rect(viewport_rect, Color(1.0f, 1.0f, 1.0f, minimap_dragging ? 0.23f : 0.12f));
+			draw_rect(viewport_rect, Color(1.0f, 1.0f, 1.0f, 0.35f), false, 1.0f);
+		}
+		draw_rect(minimap_rect, Color(1.0f, 1.0f, 1.0f, 0.16f), false, 1.0f);
+	}
+
+	bool VTimelinePanel::_begin_minimap_drag(const Vector2 &p_position) {
+		const Rect2 minimap_rect = _get_minimap_rect();
+		if (!minimap_rect.has_point(p_position)) {
+			return false;
+		}
+
+		minimap_dragging = true;
+		const Rect2 viewport_rect = _get_minimap_viewport_rect();
+		minimap_dragging_viewport = viewport_rect.has_point(p_position);
+		minimap_drag_scroll_origin = vscroll != nullptr ? vscroll->get_value() : 0.0;
+		minimap_drag_y_origin = p_position.y;
+		if (!minimap_dragging_viewport) {
+			_scroll_minimap_to_position(p_position.y);
+		}
+		queue_redraw();
+		return true;
+	}
+
+	void VTimelinePanel::_update_minimap_drag(const Vector2 &p_position) {
+		if (!minimap_dragging || vscroll == nullptr) {
+			return;
+		}
+
+		if (!minimap_dragging_viewport) {
+			_scroll_minimap_to_position(p_position.y);
+			queue_redraw();
+			return;
+		}
+
+		const Rect2 minimap_rect = _get_minimap_rect();
+		const Rect2 viewport_rect = _get_minimap_viewport_rect();
+		const double scroll_range = MAX(vscroll->get_max() - vscroll->get_page(), 0.0);
+		const double minimap_range = MAX(static_cast<double>(minimap_rect.size.y - viewport_rect.size.y), 1.0);
+		const double scroll_delta = (p_position.y - minimap_drag_y_origin) / minimap_range * scroll_range;
+		_scroll_to(vscroll, minimap_drag_scroll_origin + scroll_delta);
+		queue_redraw();
+	}
+
+	void VTimelinePanel::_finish_minimap_drag() {
+		if (!minimap_dragging) {
+			return;
+		}
+
+		minimap_dragging = false;
+		minimap_dragging_viewport = false;
+		queue_redraw();
+	}
+
+	void VTimelinePanel::_scroll_minimap_to_position(float p_y) {
+		if (vscroll == nullptr) {
+			return;
+		}
+
+		const Rect2 minimap_rect = _get_minimap_rect();
+		const Rect2 viewport_rect = _get_minimap_viewport_rect();
+		const double scroll_range = MAX(vscroll->get_max() - vscroll->get_page(), 0.0);
+		const double minimap_range = MAX(static_cast<double>(minimap_rect.size.y - viewport_rect.size.y), 1.0);
+		const double target_y = CLAMP(static_cast<double>(p_y - minimap_rect.position.y - viewport_rect.size.y * 0.5f), 0.0, minimap_range);
+		const double target_scroll = target_y / minimap_range * scroll_range;
+		_scroll_to(vscroll, target_scroll);
+	}
+
 	float VTimelinePanel::_calculate_header_width() const {
 		float width = 0.0f;
 
@@ -2148,6 +2528,9 @@ namespace godot {
 				(vertical_scroll_mode == SCROLL_MODE_AUTO && content_height > get_size().y - header_height);
 			if (v_scroll_show && vscroll && vscroll->get_parent()) {
 				min_width += vscroll->get_minimum_size().x;
+				if (draw_minimap && minimap_width > 0) {
+					min_width += minimap_width;
+				}
 			}
 		}
 
@@ -2231,7 +2614,42 @@ namespace godot {
 				}
 			}
 
+			if (mb->get_button_index() == MouseButton::MOUSE_BUTTON_RIGHT) {
+				const Vector2 mouse_position = mb->get_position();
+				const bool is_time_ruler_position = time_ruler.is_valid() &&
+					mouse_position.x >= 0.0f && mouse_position.x <= time_ruler->get_width();
+
+				if (!mb->is_pressed() && right_selecting) {
+					_finish_right_mouse_selection();
+					accept_event();
+					return;
+				}
+
+				if (mb->is_pressed() && is_time_ruler_position) {
+					emit_signal("time_ruler_right_clicked", get_time_from_position(mouse_position.y), mouse_position);
+					accept_event();
+					return;
+				}
+
+				if (mb->is_pressed() && allow_right_mouse_selection &&
+					mouse_position.y > header_height && !_get_minimap_rect().has_point(mouse_position)) {
+					right_selecting = true;
+					right_select_start = mouse_position;
+					right_select_end = right_select_start;
+					set_process_internal(true);
+					queue_redraw();
+					accept_event();
+					return;
+				}
+			}
+
 			if (mb->get_button_index() == MouseButton::MOUSE_BUTTON_LEFT) {
+				if (!mb->is_pressed() && minimap_dragging) {
+					_finish_minimap_drag();
+					accept_event();
+					return;
+				}
+
 				if (!mb->is_pressed() && clip_key_edge_dragging) {
 					_finish_clip_key_edge_drag();
 					_update_clip_key_edge_cursor(mb->get_position());
@@ -2241,6 +2659,43 @@ namespace godot {
 
 				if (!mb->is_pressed() && key_dragging) {
 					_finish_key_drag();
+					accept_event();
+					return;
+				}
+
+				const Vector2 mouse_position = mb->get_position();
+				const bool is_time_ruler_position = time_ruler.is_valid() &&
+					mouse_position.x >= 0.0f && mouse_position.x <= time_ruler->get_width();
+				if (mb->is_pressed() && _begin_minimap_drag(mouse_position)) {
+					accept_event();
+					return;
+				}
+
+				if (!mb->is_pressed() && playhead_dragging) {
+					playhead_dragging = false;
+					accept_event();
+					return;
+				}
+
+				if (mb->is_pressed() && mouse_position.y >= 0.0f && mouse_position.y <= header_height && !is_time_ruler_position) {
+					const int track_index = _get_track_header_index_at_x(mouse_position.x);
+					if (track_index >= 0) {
+						_select_track_keys(track_index);
+						accept_event();
+						return;
+					}
+				}
+
+				if (mb->is_pressed() && is_time_ruler_position) {
+					if (drag_touching) {
+						_cancel_drag();
+					}
+					if (selecting || select_pending) {
+						selecting = false;
+						select_pending = false;
+					}
+					playhead_dragging = true;
+					set_current_time(_get_playhead_drag_time(mouse_position.y));
 					accept_event();
 					return;
 				}
@@ -2278,6 +2733,7 @@ namespace godot {
 						selecting = true;
 						select_start = mb->get_position();
 						select_end = select_start;
+						set_process_internal(true);
 						queue_redraw();
 					}
 					else {
@@ -2288,6 +2744,7 @@ namespace godot {
 							selecting = false;
 							_collect_selected_keys();
 							queue_redraw();
+							_stop_internal_process_if_idle();
 						}
 					}
 					accept_event();
@@ -2324,12 +2781,14 @@ namespace godot {
 						selecting = false;
 						_collect_selected_keys();
 						queue_redraw();
+						_stop_internal_process_if_idle();
 					}
 					else if (select_pending) {
 						select_pending = false;
 						if (drag_touching) {
 							_cancel_drag();
 						}
+						_stop_internal_process_if_idle();
 					}
 				}
 				accept_event();
@@ -2389,6 +2848,19 @@ namespace godot {
 		Ref<InputEventMouseMotion> mm = p_gui_input;
 
 		if (mm.is_valid()) {
+			if (right_selecting) {
+				right_select_end = mm->get_position();
+				queue_redraw();
+				accept_event();
+				return;
+			}
+
+			if (minimap_dragging) {
+				_update_minimap_drag(mm->get_position());
+				accept_event();
+				return;
+			}
+
 			if (clip_key_edge_dragging) {
 				_update_clip_key_edge_drag(mm->get_position());
 				accept_event();
@@ -2402,8 +2874,10 @@ namespace godot {
 			}
 
 			if (playhead_dragging) {
-				double new_time = get_time_from_position(mm->get_position().y);
+				double new_time = _get_playhead_drag_time(mm->get_position().y);
 				set_current_time(new_time);
+				accept_event();
+				return;
 			}
 
 			if (selecting) {
@@ -2987,6 +3461,35 @@ namespace godot {
 		return deadzone;
 	}
 
+	void VTimelinePanel::set_draw_minimap(bool p_enabled) {
+		if (draw_minimap == p_enabled) {
+			return;
+		}
+		draw_minimap = p_enabled;
+		_update_scroll_bar();
+		queue_redraw();
+		update_minimum_size();
+	}
+
+	bool VTimelinePanel::is_drawing_minimap() const {
+		return draw_minimap;
+	}
+
+	void VTimelinePanel::set_minimap_width(int p_width) {
+		const int new_width = MAX(p_width, 0);
+		if (minimap_width == new_width) {
+			return;
+		}
+		minimap_width = new_width;
+		_update_scroll_bar();
+		queue_redraw();
+		update_minimum_size();
+	}
+
+	int VTimelinePanel::get_minimap_width() const {
+		return minimap_width;
+	}
+
 	void VTimelinePanel::set_icon_max_width(const float p_width) {
 		style_cache.icon_max_width = p_width;
 		queue_redraw();
@@ -3093,5 +3596,18 @@ namespace godot {
 
 	bool VTimelinePanel::get_allow_unselected_key_edit() const {
 		return allow_unselected_key_edit;
+	}
+
+	void VTimelinePanel::set_allow_right_mouse_selection(bool p_enabled) {
+		allow_right_mouse_selection = p_enabled;
+		if (!allow_right_mouse_selection && right_selecting) {
+			right_selecting = false;
+			queue_redraw();
+			_stop_internal_process_if_idle();
+		}
+	}
+
+	bool VTimelinePanel::get_allow_right_mouse_selection() const {
+		return allow_right_mouse_selection;
 	}
 }
