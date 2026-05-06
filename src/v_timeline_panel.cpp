@@ -15,6 +15,10 @@
 #include <godot_cpp/classes/style_box_flat.hpp>
 #include <godot_cpp/classes/theme_db.hpp>
 
+namespace {
+	constexpr float INSTANT_KEY_BASE_SIZE = 32.0f;
+}
+
 namespace godot {
 	void VTimelinePanel::_bind_methods() {
 		BIND_ENUM_CONSTANT(TIME);
@@ -50,6 +54,9 @@ namespace godot {
 		ClassDB::bind_method(D_METHOD("get_position_from_frame", "frame"), &VTimelinePanel::get_position_from_frame);
 		ClassDB::bind_method(D_METHOD("get_position_from_beat", "beat"), &VTimelinePanel::get_position_from_beat);
 
+		ClassDB::bind_method(D_METHOD("get_h_scroll_bar"), &VTimelinePanel::get_h_scroll_bar);
+		ClassDB::bind_method(D_METHOD("get_v_scroll_bar"), &VTimelinePanel::get_v_scroll_bar);
+
 		ClassDB::bind_method(D_METHOD("set_background_color", "background_color"), &VTimelinePanel::set_background_color);
 		ClassDB::bind_method(D_METHOD("get_background_color"), &VTimelinePanel::get_background_color);
 		ADD_PROPERTY(PropertyInfo(Variant::COLOR, "background_color"), "set_background_color", "get_background_color");
@@ -57,6 +64,10 @@ namespace godot {
 		ClassDB::bind_method(D_METHOD("set_header_height", "header_height"), &VTimelinePanel::set_header_height);
 		ClassDB::bind_method(D_METHOD("get_header_height"), &VTimelinePanel::get_header_height);
 		ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "header_height"), "set_header_height", "get_header_height");
+
+		ClassDB::bind_method(D_METHOD("set_header_resize_enabled", "enabled"), &VTimelinePanel::set_header_resize_enabled);
+		ClassDB::bind_method(D_METHOD("get_header_resize_enabled"), &VTimelinePanel::get_header_resize_enabled);
+		ADD_PROPERTY(PropertyInfo(Variant::BOOL, "header_resize_enabled"), "set_header_resize_enabled", "get_header_resize_enabled");
 
 		ClassDB::bind_method(D_METHOD("set_duration", "duration"), &VTimelinePanel::set_duration);
 		ClassDB::bind_method(D_METHOD("get_duration"), &VTimelinePanel::get_duration);
@@ -95,7 +106,7 @@ namespace godot {
 		ADD_GROUP("Beat", "");
 		ClassDB::bind_method(D_METHOD("set_bpms", "bpms"), &VTimelinePanel::set_bpms);
 		ClassDB::bind_method(D_METHOD("get_bpms"), &VTimelinePanel::get_bpms);
-		ADD_PROPERTY(PropertyInfo(Variant::DICTIONARY, "bpms", PROPERTY_HINT_DICTIONARY_TYPE, "float;int"), "set_bpms", "get_bpms");
+		ADD_PROPERTY(PropertyInfo(Variant::DICTIONARY, "bpms"), "set_bpms", "get_bpms");
 
 		ClassDB::bind_method(D_METHOD("set_beat_per_bar", "num"), &VTimelinePanel::set_beat_per_bar);
 		ClassDB::bind_method(D_METHOD("get_beat_per_bar"), &VTimelinePanel::get_beat_per_bar);
@@ -182,6 +193,10 @@ namespace godot {
 		ClassDB::bind_method(D_METHOD("set_deadzone", "deadzone"), &VTimelinePanel::set_deadzone);
 		ClassDB::bind_method(D_METHOD("get_deadzone"), &VTimelinePanel::get_deadzone);
 		ADD_PROPERTY(PropertyInfo(Variant::INT, "scroll_deadzone"), "set_deadzone", "get_deadzone");
+
+		ClassDB::bind_method(D_METHOD("set_middle_mouse_pan_enabled", "enabled"), &VTimelinePanel::set_middle_mouse_pan_enabled);
+		ClassDB::bind_method(D_METHOD("get_middle_mouse_pan_enabled"), &VTimelinePanel::get_middle_mouse_pan_enabled);
+		ADD_PROPERTY(PropertyInfo(Variant::BOOL, "middle_mouse_pan_enabled"), "set_middle_mouse_pan_enabled", "get_middle_mouse_pan_enabled");
 		ADD_GROUP("", "");
 
 		ADD_GROUP("Minimap", "minimap_");
@@ -264,7 +279,7 @@ namespace godot {
 		switch (p_what) {
 		case NOTIFICATION_MOUSE_EXIT:
 		case NOTIFICATION_MOUSE_EXIT_SELF: {
-			if (!clip_key_edge_dragging) {
+			if (!header_resizing && !middle_mouse_panning && !clip_key_edge_dragging) {
 				set_default_cursor_shape(Control::CURSOR_ARROW);
 			}
 		} break;
@@ -296,10 +311,10 @@ namespace godot {
 			// 先计算 header_width
 			header_width = _calculate_header_width();
 			content_width = header_width;
+			_sync_track_cache_geometry();
 
 			// 计算内容高度并更新滚动条
-			content_height = _calculate_grid_height();
-			_update_scroll_bar();
+			_update_content_height();
 
 			// 绘制网格
 			switch (counting_unit) {
@@ -356,8 +371,9 @@ namespace godot {
 				float track_x = ct.x_offset - hscroll_value;
 				if (track_x + ct.width < 0.0f || track_x > get_size().x) continue;
 
-				float key_margin = MAX(16.0f, ct.width * MAX(ct.max_instant_key_scale, 0.0f) * 0.5f + 16.0f);
-				const float instant_lod_bucket_size = CLAMP(ct.width * MAX(ct.max_instant_key_scale, 0.0f) * 0.2f, 2.0f, 8.0f);
+				const float max_instant_key_size = INSTANT_KEY_BASE_SIZE * MAX(ct.max_instant_key_scale, 0.0f);
+				float key_margin = MAX(16.0f, max_instant_key_size * 0.5f + 16.0f);
+				const float instant_lod_bucket_size = CLAMP(max_instant_key_size * 0.2f, 2.0f, 8.0f);
 				double padded_start = 0.0;
 				double padded_end = 0.0;
 				_get_visible_key_time_range(key_margin, padded_start, padded_end);
@@ -868,42 +884,71 @@ namespace godot {
 	}
 
 	void VTimelinePanel::_update_selection_auto_scroll(double p_delta) {
-		if ((!selecting && !right_selecting) || vscroll == nullptr || !vscroll->is_visible() || vertical_scroll_mode == SCROLL_MODE_DISABLED) {
+		if (!selecting && !right_selecting) {
 			return;
 		}
 
 		Vector2 *selection_start = right_selecting ? &right_select_start : &select_start;
 		const Vector2 *selection_end = right_selecting ? &right_select_end : &select_end;
-		const float hscroll_height = hscroll != nullptr && hscroll->is_visible() ? hscroll->get_combined_minimum_size().y : 0.0f;
-		const float top = header_height;
-		const float bottom = get_size().y - hscroll_height;
-		if (bottom <= top) {
-			return;
-		}
-
-		const float margin = CLAMP((bottom - top) * 0.12f, 24.0f, 64.0f);
 		const float max_speed = 720.0f;
-		float speed = 0.0f;
-		if (selection_end->y < top + margin) {
-			speed = -CLAMP((top + margin - selection_end->y) / margin, 0.0f, 1.0f) * max_speed;
-		}
-		else if (selection_end->y > bottom - margin) {
-			speed = CLAMP((selection_end->y - (bottom - margin)) / margin, 0.0f, 1.0f) * max_speed;
+		bool changed = false;
+
+		if (vscroll != nullptr && vscroll->is_visible() && vertical_scroll_mode != SCROLL_MODE_DISABLED) {
+			const float hscroll_height = hscroll != nullptr && hscroll->is_visible() ? hscroll->get_combined_minimum_size().y : 0.0f;
+			const float top = header_height;
+			const float bottom = get_size().y - hscroll_height;
+			if (bottom > top) {
+				const float margin = CLAMP((bottom - top) * 0.12f, 24.0f, 64.0f);
+				float speed = 0.0f;
+				if (selection_end->y < top + margin) {
+					speed = -CLAMP((top + margin - selection_end->y) / margin, 0.0f, 1.0f) * max_speed;
+				}
+				else if (selection_end->y > bottom - margin) {
+					speed = CLAMP((selection_end->y - (bottom - margin)) / margin, 0.0f, 1.0f) * max_speed;
+				}
+
+				if (speed != 0.0f) {
+					const double before = vscroll->get_value();
+					_scroll(vscroll, speed * p_delta);
+					const double after = vscroll->get_value();
+					if (!Math::is_equal_approx(before, after)) {
+						selection_start->y -= static_cast<float>(after - before);
+						changed = true;
+					}
+				}
+			}
 		}
 
-		if (speed == 0.0f) {
-			return;
+		if (hscroll != nullptr && hscroll->is_visible() && horizontal_scroll_mode != SCROLL_MODE_DISABLED) {
+			const float vscroll_width = vscroll != nullptr && vscroll->is_visible() ? vscroll->get_combined_minimum_size().x : 0.0f;
+			const float minimap_visible_width = _is_minimap_visible() ? static_cast<float>(minimap_width) : 0.0f;
+			const float left = 0.0f;
+			const float right = get_size().x - vscroll_width - minimap_visible_width;
+			if (right > left) {
+				const float margin = CLAMP((right - left) * 0.12f, 24.0f, 64.0f);
+				float speed = 0.0f;
+				if (selection_end->x < left + margin) {
+					speed = -CLAMP((left + margin - selection_end->x) / margin, 0.0f, 1.0f) * max_speed;
+				}
+				else if (selection_end->x > right - margin) {
+					speed = CLAMP((selection_end->x - (right - margin)) / margin, 0.0f, 1.0f) * max_speed;
+				}
+
+				if (speed != 0.0f) {
+					const double before = hscroll->get_value();
+					_scroll(hscroll, speed * p_delta);
+					const double after = hscroll->get_value();
+					if (!Math::is_equal_approx(before, after)) {
+						selection_start->x -= static_cast<float>(after - before);
+						changed = true;
+					}
+				}
+			}
 		}
 
-		const double before = vscroll->get_value();
-		_scroll(vscroll, speed * p_delta);
-		const double after = vscroll->get_value();
-		if (Math::is_equal_approx(before, after)) {
-			return;
+		if (changed) {
+			queue_redraw();
 		}
-
-		selection_start->y -= static_cast<float>(after - before);
-		queue_redraw();
 	}
 
 	void VTimelinePanel::_stop_internal_process_if_idle() {
@@ -931,6 +976,157 @@ namespace godot {
 			}
 		}
 		return CLAMP(time, 0.0, duration);
+	}
+
+	bool VTimelinePanel::_find_header_resize_edge_at_position(const Vector2 &p_position, HeaderResizeTarget &r_target, int &r_track_index) const {
+		r_target = HEADER_RESIZE_TARGET_NONE;
+		r_track_index = -1;
+
+		if (!header_resize_enabled || p_position.y < 0.0f || p_position.y > header_height) {
+			return false;
+		}
+
+		const float edge_margin = 5.0f;
+		const float viewport_width = get_size().x;
+		if (p_position.x < -edge_margin || p_position.x > viewport_width + edge_margin) {
+			return false;
+		}
+
+		float best_distance = edge_margin + 1.0f;
+		auto test_edge = [&](float p_edge_x, HeaderResizeTarget p_target, int p_track_index) {
+			if (p_edge_x < -edge_margin || p_edge_x > viewport_width + edge_margin) {
+				return;
+			}
+
+			const float distance = Math::abs(p_position.x - p_edge_x);
+			if (distance <= edge_margin && distance < best_distance) {
+				best_distance = distance;
+				r_target = p_target;
+				r_track_index = p_track_index;
+			}
+		};
+
+		if (time_ruler.is_valid() && time_ruler->get_width() > 0.0f) {
+			test_edge(-hscroll_value + time_ruler->get_width(), HEADER_RESIZE_TARGET_TIME_RULER, -1);
+		}
+
+		for (int i = 0; i < static_cast<int>(_track_cache.size()) && i < tracks.size(); i++) {
+			const CachedTrack &ct = _track_cache[i];
+			if (ct.width <= 0.0f) continue;
+
+			test_edge(ct.x_offset - hscroll_value + ct.width, HEADER_RESIZE_TARGET_TRACK, i);
+		}
+
+		return r_target != HEADER_RESIZE_TARGET_NONE;
+	}
+
+	bool VTimelinePanel::_update_header_resize_cursor(const Vector2 &p_position) {
+		if (header_resizing) {
+			set_default_cursor_shape(Control::CURSOR_HSIZE);
+			return true;
+		}
+
+		HeaderResizeTarget target = HEADER_RESIZE_TARGET_NONE;
+		int track_index = -1;
+		if (_find_header_resize_edge_at_position(p_position, target, track_index)) {
+			set_default_cursor_shape(Control::CURSOR_HSIZE);
+			return true;
+		}
+
+		return false;
+	}
+
+	void VTimelinePanel::_begin_header_resize_drag(HeaderResizeTarget p_target, int p_track_index, const Vector2 &p_position) {
+		if (p_target == HEADER_RESIZE_TARGET_NONE) {
+			return;
+		}
+
+		float target_width = 0.0f;
+		switch (p_target) {
+		case HEADER_RESIZE_TARGET_TIME_RULER: {
+			if (time_ruler.is_null()) {
+				return;
+			}
+			target_width = time_ruler->get_width();
+		} break;
+		case HEADER_RESIZE_TARGET_TRACK: {
+			ERR_FAIL_INDEX(p_track_index, tracks.size());
+			Ref<TimelineTrack> track = tracks[p_track_index];
+			if (track.is_null()) {
+				return;
+			}
+			target_width = track->get_width();
+		} break;
+		case HEADER_RESIZE_TARGET_NONE:
+		default:
+			return;
+		}
+
+		_cancel_drag();
+		selecting = false;
+		select_pending = false;
+		right_selecting = false;
+		header_resizing = true;
+		header_resize_target = p_target;
+		header_resize_track_index = p_track_index;
+		header_resize_start_mouse_x = p_position.x;
+		header_resize_start_width = target_width;
+		set_default_cursor_shape(Control::CURSOR_HSIZE);
+	}
+
+	void VTimelinePanel::_update_header_resize_drag(const Vector2 &p_position) {
+		if (!header_resizing) {
+			return;
+		}
+
+		const float min_width = 8.0f;
+		const float width = MAX(header_resize_start_width + p_position.x - header_resize_start_mouse_x, min_width);
+		bool changed = false;
+
+		switch (header_resize_target) {
+		case HEADER_RESIZE_TARGET_TIME_RULER: {
+			if (time_ruler.is_valid() && !Math::is_equal_approx(time_ruler->get_width(), width)) {
+				time_ruler->set_width(width);
+				changed = true;
+			}
+		} break;
+		case HEADER_RESIZE_TARGET_TRACK: {
+			if (header_resize_track_index >= 0 && header_resize_track_index < tracks.size()) {
+				Ref<TimelineTrack> track = tracks[header_resize_track_index];
+				if (track.is_valid() && !Math::is_equal_approx(track->get_width(), width)) {
+					track->set_width(width);
+					changed = true;
+				}
+			}
+		} break;
+		case HEADER_RESIZE_TARGET_NONE:
+		default:
+			break;
+		}
+
+		if (!changed) {
+			return;
+		}
+
+		_sync_track_cache_geometry();
+		_update_scroll_bar();
+		update_minimum_size();
+		queue_redraw();
+	}
+
+	void VTimelinePanel::_finish_header_resize_drag() {
+		if (!header_resizing) {
+			return;
+		}
+
+		header_resizing = false;
+		header_resize_target = HEADER_RESIZE_TARGET_NONE;
+		header_resize_track_index = -1;
+		header_resize_start_mouse_x = 0.0f;
+		header_resize_start_width = 0.0f;
+		if (!_update_header_resize_cursor(get_local_mouse_position())) {
+			set_default_cursor_shape(Control::CURSOR_ARROW);
+		}
 	}
 
 	bool VTimelinePanel::_find_clip_key_edge_at_position(const Vector2 &p_position, int &r_track_index, TimelineTrackKey *&r_key, ClipKeyEditEdge &r_edge) const {
@@ -1180,7 +1376,17 @@ namespace godot {
 		const double current_value = _position_to_key_value(p_position.y);
 		const double value_delta = current_value - key_drag_start_value;
 		const int target_anchor_track = allow_key_cross_track_move ? _get_track_index_at_x(p_position.x) : key_drag_anchor_track;
-		const int track_delta = target_anchor_track >= 0 && key_drag_anchor_track >= 0 ? target_anchor_track - key_drag_anchor_track : 0;
+		int track_delta = target_anchor_track >= 0 && key_drag_anchor_track >= 0 ? target_anchor_track - key_drag_anchor_track : 0;
+		if (allow_key_cross_track_move && track_delta != 0) {
+			for (const DraggedKey& dragged_key : dragged_keys) {
+				if (!dragged_key.key) continue;
+				const int target_track = CLAMP(dragged_key.original_track_index + track_delta, 0, static_cast<int>(_track_cache.size()) - 1);
+				if (!_can_move_key_to_track(dragged_key.key, target_track)) {
+					track_delta = 0;
+					break;
+				}
+			}
+		}
 		const double max_value = counting_unit == FRAME ? duration * fps : duration;
 
 		if (Math::abs(value_delta) <= 0.000001 && track_delta == 0) {
@@ -1259,6 +1465,9 @@ namespace godot {
 		if (!p_key || p_to_track < 0 || p_to_track >= static_cast<int>(_track_cache.size()) || p_from_track == p_to_track) {
 			return;
 		}
+		if (!_can_move_key_to_track(p_key, p_to_track)) {
+			return;
+		}
 
 		if (p_from_track < 0 || p_from_track >= static_cast<int>(_track_cache.size())) {
 			for (int i = 0; i < static_cast<int>(_track_cache.size()); i++) {
@@ -1281,6 +1490,10 @@ namespace godot {
 
 		from_keys.erase(it);
 		_track_cache[p_to_track].keys.push_back(p_key);
+	}
+
+	bool VTimelinePanel::_can_move_key_to_track(const TimelineTrackKey* p_key, int p_track_index) const {
+		return p_key != nullptr && p_key->can_move_to_track(p_track_index);
 	}
 
 	double VTimelinePanel::_snap_key_time(double p_time) const {
@@ -1501,6 +1714,88 @@ namespace godot {
 		}
 	}
 
+	void VTimelinePanel::_begin_middle_mouse_pan(const Vector2 &p_position) {
+		if (!middle_mouse_pan_enabled || p_position.y <= header_height) {
+			return;
+		}
+
+		if (header_resizing || minimap_dragging || clip_key_edge_dragging || key_dragging || playhead_dragging || selecting || right_selecting || select_pending) {
+			return;
+		}
+
+		_cancel_drag();
+		middle_mouse_panning = true;
+		middle_mouse_pan_last_position = p_position;
+		set_default_cursor_shape(Control::CURSOR_CROSS);
+	}
+
+	void VTimelinePanel::_update_middle_mouse_pan(const Vector2 &p_position) {
+		if (!middle_mouse_panning) {
+			return;
+		}
+
+		Vector2 current_position = p_position;
+		const Vector2 motion = current_position - middle_mouse_pan_last_position;
+		if (hscroll != nullptr && hscroll->is_visible() && horizontal_scroll_mode != SCROLL_MODE_DISABLED) {
+			_scroll(hscroll, -motion.x);
+		}
+		if (vscroll != nullptr && vscroll->is_visible() && vertical_scroll_mode != SCROLL_MODE_DISABLED) {
+			_scroll(vscroll, -motion.y);
+		}
+
+		middle_mouse_pan_last_position = current_position;
+		_wrap_middle_mouse_pan_position(current_position);
+		middle_mouse_pan_last_position = current_position;
+	}
+
+	void VTimelinePanel::_finish_middle_mouse_pan(const Vector2 &p_position) {
+		if (!middle_mouse_panning) {
+			return;
+		}
+
+		middle_mouse_panning = false;
+		middle_mouse_pan_last_position = Vector2();
+		if (!_update_header_resize_cursor(p_position)) {
+			_update_clip_key_edge_cursor(p_position);
+		}
+	}
+
+	bool VTimelinePanel::_wrap_middle_mouse_pan_position(Vector2 &r_position) {
+		const Size2 size = get_size();
+		if (size.x <= 0.0f || size.y <= 0.0f) {
+			return false;
+		}
+
+		const float margin = 2.0f;
+		const float left_wrap = MIN(margin, size.x * 0.5f);
+		const float right_wrap = MAX(size.x - margin, size.x * 0.5f);
+		const float top_wrap = MIN(margin, size.y * 0.5f);
+		const float bottom_wrap = MAX(size.y - margin, size.y * 0.5f);
+		Vector2 wrapped_position = r_position;
+
+		if (r_position.x < 0.0f) {
+			wrapped_position.x = right_wrap;
+		}
+		else if (r_position.x > size.x) {
+			wrapped_position.x = left_wrap;
+		}
+
+		if (r_position.y < 0.0f) {
+			wrapped_position.y = bottom_wrap;
+		}
+		else if (r_position.y > size.y) {
+			wrapped_position.y = top_wrap;
+		}
+
+		if (wrapped_position == r_position) {
+			return false;
+		}
+
+		warp_mouse(wrapped_position);
+		r_position = wrapped_position;
+		return true;
+	}
+
 	void VTimelinePanel::_draw_header(const Point2& pos, const float width, Ref<StyleBox> header_bg, Ref<Texture2D> header_icon) {
 		if (header_bg.is_valid()) {
 			draw_style_box(header_bg, Rect2(pos, Size2(width, header_height)));
@@ -1520,144 +1815,120 @@ namespace godot {
 		}
 	}
 
-	void VTimelinePanel::_build_time_to_beat_map() {
-		Array map;
-		Array sorted_beats;
+	std::vector<VTimelinePanel::BPM> VTimelinePanel::_get_sorted_bpms() const {
+		std::vector<BPM> result;
 		Array keys = bpms.keys();
+		result.reserve(keys.size());
 
-		for (int index = 0; index < bpms.size(); ++index) {
+		for (int index = 0; index < keys.size(); ++index) {
 			double time = keys[index];
-			Dictionary current_bpm = bpms.get(time, 120);
-			sorted_beats.append(current_bpm.get("beat", 0.0));
-		}
+			Variant value = bpms.get(time, Variant());
+			BPM point;
+			point.time = time;
 
-		double current_sec = 0.0;
-		for (int64_t index = 0; index < sorted_beats.size(); ++index) {
-			double time = keys[index];
-			Dictionary current_bpm = bpms.get(time, 120);
-			double from_beat = sorted_beats[index];
-			double to_beat = INFINITY;
-			int bpm = current_bpm.get("bpm", 120);
-
-			if (bpm == 0) bpm = 120;
-
-			// 最后一段用剩余秒数反推拍数
-			double sec_left = duration - current_sec;
-
-			if (index == sorted_beats.size() - 1) {
-				to_beat = _beat_total;
-				Dictionary result;
-				result["from_sec"] = current_sec;
-				result["to_sec"] = duration;
-				result["from_beat"] = from_beat;
-				result["to_beat"] = to_beat;
-				result["bpm"] = bpm;
-				map.append(result);
-				break;
+			if (value.get_type() == Variant::DICTIONARY) {
+				Dictionary bpm_data = value;
+				point.beat = bpm_data.get("beat", 0.0);
+				point.bpm = bpm_data.get("bpm", 120.0);
+				point.has_beat = true;
+			}
+			else if (value.get_type() == Variant::FLOAT || value.get_type() == Variant::INT) {
+				point.bpm = value;
+				point.has_beat = false;
+			}
+			else {
+				point.bpm = 120.0;
+				point.has_beat = false;
 			}
 
-			// 普通段
-			to_beat = sorted_beats[index + 1];
-			double beats_in_seg = to_beat - from_beat;
-			double sec_in_seg = beats_in_seg * 60.0 / bpm;
+			if (point.bpm <= 0.0) {
+				point.bpm = 120.0;
+			}
+			result.push_back(point);
+		}
+
+		std::sort(result.begin(), result.end(), [](const BPM& p_a, const BPM& p_b) {
+			if (p_a.time == p_b.time) {
+				return p_a.beat < p_b.beat;
+			}
+			return p_a.time < p_b.time;
+		});
+
+		if (result.empty()) {
+			result.push_back(BPM(0.0, 0.0, 120.0));
+			return result;
+		}
+
+		if (result.front().time > 0.0) {
+			result.insert(result.begin(), BPM(0.0, 0.0, result.front().bpm));
+		}
+
+		for (int index = 0; index < static_cast<int>(result.size()); ++index) {
+			if (result[index].has_beat) {
+				continue;
+			}
+			if (index == 0) {
+				result[index].beat = 0.0;
+				result[index].has_beat = true;
+				continue;
+			}
+			const BPM& previous = result[index - 1];
+			const double sec_delta = MAX(result[index].time - previous.time, 0.0);
+			result[index].beat = previous.beat + sec_delta * previous.bpm / 60.0;
+			result[index].has_beat = true;
+		}
+
+		return result;
+	}
+
+	void VTimelinePanel::_build_time_to_beat_map() {
+		Array map;
+		const std::vector<BPM> bpm_points = _get_sorted_bpms();
+
+		for (int index = 0; index < static_cast<int>(bpm_points.size()); ++index) {
+			const BPM& point = bpm_points[index];
+			const double to_sec = index == static_cast<int>(bpm_points.size()) - 1 ? duration : bpm_points[index + 1].time;
+			const double to_beat = index == static_cast<int>(bpm_points.size()) - 1 ? _beat_total : bpm_points[index + 1].beat;
 			Dictionary result;
-			result["from_sec"] = current_sec;
-			result["to_sec"] = current_sec + sec_in_seg;
-			result["from_beat"] = from_beat;
+			result["from_sec"] = point.time;
+			result["to_sec"] = MAX(to_sec, point.time);
+			result["from_beat"] = point.beat;
 			result["to_beat"] = to_beat;
-			result["bpm"] = bpm;
+			result["bpm"] = point.bpm;
 			map.append(result);
-			current_sec += sec_in_seg;
 		}
 		beat_map = map;
 	}
 
 	void VTimelinePanel::_build_beat_to_time_map() {
 		Array map;
-		Array sorted_beats;
-		Array keys = bpms.keys();
+		const std::vector<BPM> bpm_points = _get_sorted_bpms();
 
-		for (int index = 0; index < bpms.size(); ++index) {
-			double time = keys[index];
-			Dictionary current_bpm = bpms.get(time, 120);
-			sorted_beats.append(current_bpm.get("beat", 0.0));
-		}
-
-		double current_map_end_beat = _beat_total;
-		double current_sec = 0.0;
-
-		for (int64_t index = 0; index < sorted_beats.size(); ++index) {
-			double from_beat = sorted_beats[index];
-			double time = keys[index];
-			Dictionary current_bpm = bpms.get(time, 120);
-			int bpm = current_bpm.get("bpm", 120);
-
-			// 最后一段
-			if (index == sorted_beats.size() - 1) {
-				Dictionary result;
-				result["from_sec"] = current_sec;
-				result["from_beat"] = from_beat;
-				result["to_beat"] = current_map_end_beat;
-				result["bpm"] = bpm;
-				map.append(result);
-				break;
-			}
-
-			double to_beat_in_seg = sorted_beats[index + 1];
-			double beats_in_seg = to_beat_in_seg - from_beat;
-			double sec_in_seg = beats_in_seg * 60.0 / bpm;
+		for (int index = 0; index < static_cast<int>(bpm_points.size()); ++index) {
+			const BPM& point = bpm_points[index];
+			const double to_sec = index == static_cast<int>(bpm_points.size()) - 1 ? duration : bpm_points[index + 1].time;
+			const double to_beat = index == static_cast<int>(bpm_points.size()) - 1 ? _beat_total : bpm_points[index + 1].beat;
 			Dictionary result;
-			result["from_sec"] = current_sec;
-			result["from_beat"] = from_beat;
-			result["to_beat"] = to_beat_in_seg;
-			result["bpm"] = bpm;
+			result["from_sec"] = point.time;
+			result["to_sec"] = MAX(to_sec, point.time);
+			result["from_beat"] = point.beat;
+			result["to_beat"] = to_beat;
+			result["bpm"] = point.bpm;
 			map.append(result);
-			current_sec += sec_in_seg;
 		}
 		time_map = map;
 	}
 
 	void VTimelinePanel::_calculate_beat_total() {
-		if (bpms.is_empty()) {
+		const std::vector<BPM> bpm_points = _get_sorted_bpms();
+		if (bpm_points.empty()) {
 			_beat_total = 0.0;
 			return;
 		}
 
-		double current_sec = 0.0;
-		double current_beat = 0.0;
-		Array keys = bpms.keys();
-
-		for (int64_t index = 0; index < bpms.size(); ++index) {
-			double time = keys[index];
-			Dictionary current_bpm = bpms.get(time, 120);
-			int from_beat = current_bpm.get("beat", 0.0);
-			int bpm = current_bpm.get("bpm", 120);
-
-			if (bpm == 0) bpm = 120;
-
-			// 用剩余秒数反推拍数
-			if (index == bpms.size() - 1) {
-				double sec_left = duration - current_sec;
-
-				// 防止精度误差导致负数
-				if (sec_left < 0) sec_left = 0;
-
-				double beats_left = sec_left * bpm / 60.0;
-				_beat_total = from_beat + beats_left;
-				break;
-			}
-
-			// 普通段
-			double next_time = keys[index + 1];
-			Dictionary next_bpm = bpms.get(next_time, 120);
-			int to_beat = next_bpm.get("beat", 0.0);
-			int beats_seg = to_beat - from_beat;
-			if (bpm == 0) bpm = 120.0;
-
-			double sec_seg = beats_seg * 60.0 / bpm;
-			current_sec += sec_seg;
-			current_beat = to_beat;
-		}
+		const BPM& last = bpm_points.back();
+		const double sec_left = MAX(duration - last.time, 0.0);
+		_beat_total = MAX(last.beat + sec_left * last.bpm / 60.0, 0.0);
 	}
 
 	void VTimelinePanel::_calculate_row_total() {
@@ -1666,11 +1937,7 @@ namespace godot {
 
 	double VTimelinePanel::_time_to_y(double p_time) const {
 		if (counting_unit == BEAT) {
-			double row = _time_to_beat(p_time) * beats_per_bar;
-			if (bar_number_direction == BAR_NUMBER_BOTTOM_UP) {
-				return header_height + content_height - row * (scale / beats_per_bar) - vscroll_value;
-			}
-			return header_height + row * (scale / beats_per_bar) - vscroll_value;
+			return _beat_to_y(_time_to_beat(p_time));
 		}
 		else {
 			if (bar_number_direction == BAR_NUMBER_BOTTOM_UP) {
@@ -1684,8 +1951,7 @@ namespace godot {
 		double time;
 		if (bar_number_direction == BAR_NUMBER_BOTTOM_UP) {
 			if (counting_unit == BEAT) {
-				double beat = (header_height + content_height - p_y - vscroll_value) / scale;
-				time = _beat_to_time(beat);
+				time = _beat_to_time(_y_to_beat(p_y));
 			}
 			else {
 				time = (header_height + content_height - p_y - vscroll_value) / scale;
@@ -1693,8 +1959,7 @@ namespace godot {
 		}
 		else {
 			if (counting_unit == BEAT) {
-				double beat = (p_y - header_height + vscroll_value) / scale;
-				time = _beat_to_time(beat);
+				time = _beat_to_time(_y_to_beat(p_y));
 			}
 			else {
 				time = (p_y - header_height + vscroll_value) / scale;
@@ -1715,19 +1980,23 @@ namespace godot {
 			double from_beat = seg.get("from_beat", 0.0);
 			double to_beat = seg.get("to_beat", 0.0);
 
-			if (time_sec >= from_sec && time_sec < to_sec) {
-				double time = (time_sec - from_sec) / (to_sec - from_sec);
+			if (time_sec >= from_sec && time_sec <= to_sec) {
+				const double sec_length = to_sec - from_sec;
+				if (sec_length <= 0.0) {
+					return from_beat;
+				}
+				double time = (time_sec - from_sec) / sec_length;
 				return UtilityFunctions::lerpf(from_beat, to_beat, time);
 			}
 		}
 
-		// 超尾
 		if (seg_map.is_empty()) return 0.0;
 
 		Dictionary last = seg_map[seg_map.size() - 1];
 		double to_sec = last.get("to_sec", 0.0);
 		double to_beat = last.get("to_beat", 0.0);
-		int bpm = last.get("bpm", 0);
+		double bpm = last.get("bpm", 120.0);
+		if (bpm <= 0.0) bpm = 120.0;
 		double extra_sec = time_sec - to_sec;
 		double extra_beat_cout = extra_sec * bpm / 60.0;
 		return to_beat + extra_beat_cout;
@@ -1741,22 +2010,27 @@ namespace godot {
 			double from_sec = seg.get("from_sec", 0.0);
 			double from_beat = seg.get("from_beat", 0.0);
 			double to_beat = seg.get("to_beat", 0.0);
-			int bpm = seg.get("bpm", 0);
+			double bpm = seg.get("bpm", 120.0);
+			if (bpm <= 0.0) bpm = 120.0;
 
 			if (beat < from_beat) continue;
 			if (beat >= to_beat) continue;
 
-			double time = (beat - from_beat) / (to_beat - from_beat);
-			return UtilityFunctions::lerpf(from_sec, from_sec + (to_beat - from_beat) * 60.0 / bpm, time);
+			const double beat_length = to_beat - from_beat;
+			if (beat_length <= 0.0) {
+				return from_sec;
+			}
+			double time = (beat - from_beat) / beat_length;
+			return UtilityFunctions::lerpf(from_sec, from_sec + beat_length * 60.0 / bpm, time);
 		}
 
-		// 超尾
 		if (seg_map.is_empty()) return 0.0;
 
 		Dictionary last = seg_map[seg_map.size() - 1];
 		double from_sec = last.get("from_sec", 0.0);
 		double from_beat = last.get("from_beat", 0.0);
-		int bpm = last.get("bpm", 0);
+		double bpm = last.get("bpm", 120.0);
+		if (bpm <= 0.0) bpm = 120.0;
 		double extra_beats = beat - from_beat;
 		double extra_sec = extra_beats * 60.0 / bpm;
 		return from_sec + extra_sec;
@@ -1764,23 +2038,21 @@ namespace godot {
 
 	double VTimelinePanel::_beat_to_y(double p_beat) const {
 		if (bar_number_direction == BAR_NUMBER_BOTTOM_UP) {
-			return header_height + content_height - p_beat * (scale / beats_per_bar) - vscroll_value;
+			return header_height + content_height - p_beat * scale - vscroll_value;
 		}
-		return header_height + p_beat * (scale / beats_per_bar) - vscroll_value;
+		return header_height + p_beat * scale - vscroll_value;
 	}
 
 	double VTimelinePanel::_y_to_beat(double p_y) const {
 		double beat;
 		if (bar_number_direction == BAR_NUMBER_BOTTOM_UP) {
-			beat = (header_height + content_height - p_y - vscroll_value) / (scale / beats_per_bar);
+			beat = (header_height + content_height - p_y - vscroll_value) / scale;
 		}
 		else {
-			beat = (p_y - header_height + vscroll_value) / (scale / beats_per_bar);
+			beat = (p_y - header_height + vscroll_value) / scale;
 		}
-		// 限制 beat 在有效范围内
 		if (beat < 0) beat = 0;
-		double total_beats = content_height / (scale / beats_per_bar);
-		if (beat > total_beats) beat = total_beats;
+		if (beat > _beat_total) beat = _beat_total;
 		return beat;
 	}
 
@@ -1891,8 +2163,12 @@ namespace godot {
 		return p_key ? p_key->get_instant_key_scale() : 0.4f;
 	}
 
+	float VTimelinePanel::_get_instant_key_size(const TimelineTrackKey* p_key) const {
+		return MAX(INSTANT_KEY_BASE_SIZE * _get_instant_key_scale(p_key), 0.0f);
+	}
+
 	Rect2 VTimelinePanel::_get_instant_key_rect(const CachedTrack& p_track, const TimelineTrackKey* p_key, double p_y) const {
-		float key_size = p_track.width * _get_instant_key_scale(p_key);
+		float key_size = _get_instant_key_size(p_key);
 		float pos_x = p_track.x_offset - hscroll_value + (p_track.width - key_size) * 0.5f;
 		float pos_y = static_cast<float>(p_y) - key_size * 0.5f;
 		return Rect2(pos_x, pos_y, key_size, key_size);
@@ -2009,6 +2285,7 @@ namespace godot {
 	}
 
 	void VTimelinePanel::_on_resource_changed() {
+		_sync_track_cache_geometry();
 		_refresh_track_key_metrics();
 		queue_redraw();
 		update_minimum_size();
@@ -2039,6 +2316,31 @@ namespace godot {
 			_track_cache.push_back(std::move(ct));
 			current_x += track->get_width();
 		}
+	}
+
+	void VTimelinePanel::_sync_track_cache_geometry() {
+		if (_track_cache.size() != static_cast<size_t>(tracks.size())) {
+			_rebuild_track_cache();
+			return;
+		}
+
+		float current_x = 0.0f;
+		if (time_ruler.is_valid()) {
+			current_x += time_ruler->get_width();
+		}
+
+		for (int i = 0; i < tracks.size(); i++) {
+			CachedTrack &ct = _track_cache[i];
+			Ref<TimelineTrack> track = tracks[i];
+			ct.x_offset = current_x;
+			ct.width = track.is_valid() ? track->get_width() : 0.0f;
+			current_x += ct.width;
+		}
+	}
+
+	void VTimelinePanel::_update_content_height() {
+		content_height = _calculate_grid_height();
+		_update_scroll_bar();
 	}
 
 	void VTimelinePanel::_update_scroll_bar() {
@@ -2088,6 +2390,8 @@ namespace godot {
 			vscroll->set_value(0);
 		}
 
+		hscroll_value = hscroll->get_value();
+		vscroll_value = vscroll->get_value();
 		updating_scroll = false;
 	}
 
@@ -2121,19 +2425,17 @@ namespace godot {
 
 		switch (counting_unit) {
 		case BEAT: {
-			// 计算可见范围内的拍
 			double start_beat = _y_to_beat(visible_start_y);
 			double end_beat = _y_to_beat(visible_end_y);
-			int start_beat_i = Math::floor(Math::min(start_beat, end_beat));
-			int end_beat_i = Math::ceil(Math::max(start_beat, end_beat));
+			const int divisions = MAX(beats_per_bar, 1);
+			int start_row = Math::floor(Math::min(start_beat, end_beat) * divisions);
+			int end_row = Math::ceil(Math::max(start_beat, end_beat) * divisions);
 
-			// 绘制所有拍线
-			for (int beat = start_beat_i; beat <= end_beat_i; beat++) {
-				float y = _beat_to_y(beat);
+			for (int row = start_row; row <= end_row; row++) {
+				float y = _beat_to_y(static_cast<double>(row) / divisions);
 				if (y < visible_start_y || y > visible_end_y) continue;
 
-				// 判断是小节线还是拍线
-				bool is_bar_line = (beat % beats_per_bar) == 0;
+				bool is_bar_line = (row % divisions) == 0;
 				float tick_height = is_bar_line ? major_tick_height : minor_tick_height;
 				float tick_width = is_bar_line ? major_tick_width : minor_tick_width;
 
@@ -2144,9 +2446,8 @@ namespace godot {
 					tick_width
 				);
 
-				// 小节数字
 				if (is_bar_line) {
-					int bar = beat / beats_per_bar;
+					int bar = row / divisions;
 					bool should_draw_number = true;
 					if (bar_number_direction == BAR_NUMBER_BOTTOM_UP) {
 						if (y > get_size().y - margin) should_draw_number = false;
@@ -2306,19 +2607,17 @@ namespace godot {
 		float visible_start_y = header_height;
 		float visible_end_y = get_size().y;
 
-		// 计算可见范围内的拍
 		double start_beat = _y_to_beat(visible_start_y);
 		double end_beat = _y_to_beat(visible_end_y);
-		int start_beat_i = Math::floor(Math::min(start_beat, end_beat));
-		int end_beat_i = Math::ceil(Math::max(start_beat, end_beat));
+		const int divisions = MAX(beats_per_bar, 1);
+		int start_row = Math::floor(Math::min(start_beat, end_beat) * divisions);
+		int end_row = Math::ceil(Math::max(start_beat, end_beat) * divisions);
 
-		// 绘制所有拍线
-		for (int beat = start_beat_i; beat <= end_beat_i; beat++) {
-			float y = _beat_to_y(beat);
+		for (int row = start_row; row <= end_row; row++) {
+			float y = _beat_to_y(static_cast<double>(row) / divisions);
 			if (y < visible_start_y || y > visible_end_y) continue;
 
-			// 判断是小节线还是拍线
-			bool is_beat_line = (beat % beats_per_bar) == 0;
+			bool is_beat_line = (row % divisions) == 0;
 			Color line_color = is_beat_line ? beat_line_color : bar_line_color;
 			float line_w = is_beat_line ? beat_line_width : bar_line_width;
 
@@ -2696,9 +2995,9 @@ namespace godot {
 	float VTimelinePanel::_calculate_grid_height() const {
 		switch (counting_unit) {
 		case BEAT: {
-			double total_rows = _row_total;
-			if (total_rows < 1) total_rows = 1;
-			return total_rows * (scale / beats_per_bar);
+			double beat_height = _beat_total * scale;
+			if (beat_height < scale) beat_height = scale;
+			return beat_height;
 		}
 		case FRAME: {
 			double total_frames = duration * fps;
@@ -2746,6 +3045,8 @@ namespace godot {
 
 	void VTimelinePanel::_gui_input(const Ref<InputEvent>& p_gui_input) {
 		ERR_FAIL_COND(p_gui_input.is_null());
+
+		_sync_track_cache_geometry();
 
 		double prev_v_scroll = vscroll->get_value();
 		double prev_h_scroll = hscroll->get_value();
@@ -2811,6 +3112,22 @@ namespace godot {
 				}
 			}
 
+			if (mb->get_button_index() == MouseButton::MOUSE_BUTTON_MIDDLE) {
+				if (!mb->is_pressed() && middle_mouse_panning) {
+					_finish_middle_mouse_pan(mb->get_position());
+					accept_event();
+					return;
+				}
+
+				if (mb->is_pressed()) {
+					_begin_middle_mouse_pan(mb->get_position());
+					if (middle_mouse_panning) {
+						accept_event();
+						return;
+					}
+				}
+			}
+
 			if (mb->get_button_index() == MouseButton::MOUSE_BUTTON_RIGHT) {
 				const Vector2 mouse_position = mb->get_position();
 				const float time_ruler_left = -hscroll_value;
@@ -2843,6 +3160,12 @@ namespace godot {
 			}
 
 			if (mb->get_button_index() == MouseButton::MOUSE_BUTTON_LEFT) {
+				if (!mb->is_pressed() && header_resizing) {
+					_finish_header_resize_drag();
+					accept_event();
+					return;
+				}
+
 				if (!mb->is_pressed() && minimap_dragging) {
 					_finish_minimap_drag();
 					accept_event();
@@ -2867,6 +3190,16 @@ namespace godot {
 				const float time_ruler_right = time_ruler_left + (time_ruler.is_valid() ? time_ruler->get_width() : 0.0f);
 				const bool is_time_ruler_position = time_ruler.is_valid() &&
 					mouse_position.x >= time_ruler_left && mouse_position.x <= time_ruler_right;
+				if (mb->is_pressed()) {
+					HeaderResizeTarget header_resize_hit = HEADER_RESIZE_TARGET_NONE;
+					int header_resize_hit_track = -1;
+					if (_find_header_resize_edge_at_position(mouse_position, header_resize_hit, header_resize_hit_track)) {
+						_begin_header_resize_drag(header_resize_hit, header_resize_hit_track, mouse_position);
+						accept_event();
+						return;
+					}
+				}
+
 				if (mb->is_pressed() && _begin_minimap_drag(mouse_position)) {
 					accept_event();
 					return;
@@ -3053,6 +3386,18 @@ namespace godot {
 		Ref<InputEventMouseMotion> mm = p_gui_input;
 
 		if (mm.is_valid()) {
+			if (middle_mouse_panning) {
+				_update_middle_mouse_pan(mm->get_position());
+				accept_event();
+				return;
+			}
+
+			if (header_resizing) {
+				_update_header_resize_drag(mm->get_position());
+				accept_event();
+				return;
+			}
+
 			if (right_selecting) {
 				right_select_end = mm->get_position();
 				queue_redraw();
@@ -3104,7 +3449,9 @@ namespace godot {
 			}
 
 			if (!playhead_dragging && !selecting && !select_pending && !drag_touching) {
-				_update_clip_key_edge_cursor(mm->get_position());
+				if (!_update_header_resize_cursor(mm->get_position())) {
+					_update_clip_key_edge_cursor(mm->get_position());
+				}
 			}
 
 			if (drag_touching && !drag_touching_deaccel) {
@@ -3379,6 +3726,14 @@ namespace godot {
 		return _beat_to_y(p_beat);
 	}
 
+	HScrollBar* VTimelinePanel::get_h_scroll_bar() const {
+		return hscroll;
+	}
+
+	VScrollBar* VTimelinePanel::get_v_scroll_bar() const {
+		return vscroll;
+	}
+
 	void VTimelinePanel::set_background_color(const Color& p_background_color) {
 		background_color = p_background_color;
 		queue_redraw();
@@ -3416,12 +3771,25 @@ namespace godot {
 		return header_height;
 	}
 
+	void VTimelinePanel::set_header_resize_enabled(bool p_enabled) {
+		header_resize_enabled = p_enabled;
+		if (!header_resize_enabled && header_resizing) {
+			_finish_header_resize_drag();
+		}
+		queue_redraw();
+	}
+
+	bool VTimelinePanel::get_header_resize_enabled() const {
+		return header_resize_enabled;
+	}
+
 	void VTimelinePanel::set_duration(const double p_duration) {
 		duration = p_duration;
 		_calculate_beat_total();
 		_calculate_row_total();
 		_build_time_to_beat_map();
 		_build_beat_to_time_map();
+		_update_content_height();
 		queue_redraw();
 		update_minimum_size();
 	}
@@ -3441,6 +3809,7 @@ namespace godot {
 
 	void VTimelinePanel::set_scale(const float p_scale) {
 		scale = p_scale;
+		_update_content_height();
 		queue_redraw();
 		update_minimum_size();
 	}
@@ -3451,6 +3820,7 @@ namespace godot {
 
 	void VTimelinePanel::set_counting_unit(CountingUnit p_unit) {
 		counting_unit = p_unit;
+		_update_content_height();
 		notify_property_list_changed();
 		queue_redraw();
 		update_minimum_size();
@@ -3480,6 +3850,7 @@ namespace godot {
 
 	void VTimelinePanel::set_fps(const int p_fps) {
 		fps = p_fps;
+		_update_content_height();
 		queue_redraw();
 		update_minimum_size();
 	}
@@ -3503,6 +3874,7 @@ namespace godot {
 		_calculate_row_total();
 		_build_time_to_beat_map();
 		_build_beat_to_time_map();
+		_update_content_height();
 		queue_redraw();
 		update_minimum_size();
 	}
@@ -3514,6 +3886,7 @@ namespace godot {
 	void VTimelinePanel::set_beat_per_bar(const int p_beats_per_bar) {
 		beats_per_bar = p_beats_per_bar;
 		_calculate_row_total();
+		_update_content_height();
 		queue_redraw();
 		update_minimum_size();
 	}
@@ -3697,6 +4070,17 @@ namespace godot {
 
 	int VTimelinePanel::get_deadzone() const {
 		return deadzone;
+	}
+
+	void VTimelinePanel::set_middle_mouse_pan_enabled(bool p_enabled) {
+		middle_mouse_pan_enabled = p_enabled;
+		if (!middle_mouse_pan_enabled && middle_mouse_panning) {
+			_finish_middle_mouse_pan(get_local_mouse_position());
+		}
+	}
+
+	bool VTimelinePanel::get_middle_mouse_pan_enabled() const {
+		return middle_mouse_pan_enabled;
 	}
 
 	void VTimelinePanel::set_draw_minimap(bool p_enabled) {

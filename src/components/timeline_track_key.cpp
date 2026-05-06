@@ -31,6 +31,10 @@ namespace godot {
 		ClassDB::bind_method(D_METHOD("set_metadata", "meta"), &TimelineTrackKey::set_metadata);
 		ClassDB::bind_method(D_METHOD("get_metadata"), &TimelineTrackKey::get_metadata);
 
+		ClassDB::bind_method(D_METHOD("set_allowed_track_indices", "track_indices"), &TimelineTrackKey::set_allowed_track_indices);
+		ClassDB::bind_method(D_METHOD("get_allowed_track_indices"), &TimelineTrackKey::get_allowed_track_indices);
+		ADD_PROPERTY(PropertyInfo(Variant::PACKED_INT32_ARRAY, "allowed_track_indices"), "set_allowed_track_indices", "get_allowed_track_indices");
+
 		ClassDB::bind_method(D_METHOD("is_instant"), &TimelineTrackKey::is_instant);
 
 		ADD_SUBGROUP("Constants", "");
@@ -192,6 +196,27 @@ namespace godot {
 
 	Variant TimelineTrackKey::get_metadata() const {
 		return meta;
+	}
+
+	void TimelineTrackKey::set_allowed_track_indices(const PackedInt32Array& p_track_indices) {
+		allowed_track_indices = p_track_indices;
+		emit_signal("changed");
+	}
+
+	PackedInt32Array TimelineTrackKey::get_allowed_track_indices() const {
+		return allowed_track_indices;
+	}
+
+	bool TimelineTrackKey::can_move_to_track(int p_track_index) const {
+		if (allowed_track_indices.is_empty()) {
+			return true;
+		}
+		for (int i = 0; i < allowed_track_indices.size(); i++) {
+			if (allowed_track_indices[i] == p_track_index) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	bool TimelineTrackKey::is_instant() const {

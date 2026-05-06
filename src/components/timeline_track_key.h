@@ -4,6 +4,7 @@
 #include <godot_cpp/classes/object.hpp>
 #include <godot_cpp/classes/style_box.hpp>
 #include <godot_cpp/classes/texture2d.hpp>
+#include <godot_cpp/variant/packed_int32_array.hpp>
 
 namespace godot {
 	class TimelineTrackKey : public Object {
@@ -22,6 +23,7 @@ namespace godot {
 		float instant_key_scale = 0.4f;
 		bool selected = false;
 		bool disabled = false;
+		PackedInt32Array allowed_track_indices;
 		Variant meta;
 
 	protected:
@@ -70,6 +72,10 @@ namespace godot {
 
 		void set_metadata(const Variant& p_meta);
 		Variant get_metadata() const;
+
+		void set_allowed_track_indices(const PackedInt32Array& p_track_indices);
+		PackedInt32Array get_allowed_track_indices() const;
+		bool can_move_to_track(int p_track_index) const;
 
 		bool is_instant() const;
 	};

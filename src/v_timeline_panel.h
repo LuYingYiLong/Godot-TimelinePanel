@@ -67,6 +67,12 @@ namespace godot {
 			CLIP_KEY_EDIT_EDGE_TAIL,
 		};
 
+		enum HeaderResizeTarget {
+			HEADER_RESIZE_TARGET_NONE,
+			HEADER_RESIZE_TARGET_TIME_RULER,
+			HEADER_RESIZE_TARGET_TRACK,
+		};
+
 		Color background_color;
 		Color separator_color = Color("#696969");
 		float separator_width = -1.0f;
@@ -75,6 +81,7 @@ namespace godot {
 
 		float header_width = 0.0f;
 		float header_height = 16.0f;
+		bool header_resize_enabled = true;
 		double duration = 0.0;
 		double current_time = 0.0;
 		float scale = 32.0f;
@@ -91,6 +98,7 @@ namespace godot {
 		bool updating_scroll = false;
 
 		void _update_scroll_bar();
+		void _update_content_height();
 		void _h_scroll_changed(double p_value);
 		void _v_scroll_changed(double p_value);
 
@@ -101,10 +109,14 @@ namespace godot {
 		bool show_subdivision = true;
 
 		struct BPM {
-			float time;
-			int bpms;
+			double time = 0.0;
+			double beat = 0.0;
+			double bpm = 120.0;
+			bool has_beat = false;
 
-			BPM(float p_time, int p_bpm) : time(p_time), bpms(p_bpm) {}
+			BPM() = default;
+			BPM(double p_time, double p_beat, double p_bpm, bool p_has_beat = true) :
+					time(p_time), beat(p_beat), bpm(p_bpm), has_beat(p_has_beat) {}
 		};
 
 		Dictionary bpms;
@@ -122,6 +134,7 @@ namespace godot {
 		ScrollMode horizontal_scroll_mode = SCROLL_MODE_AUTO;
 		ScrollMode vertical_scroll_mode = SCROLL_MODE_AUTO;
 		int deadzone = 0;
+		bool middle_mouse_pan_enabled = true;
 		bool draw_minimap = true;
 		int minimap_width = 80;
 		bool minimap_dragging = false;
@@ -150,6 +163,8 @@ namespace godot {
 		bool clip_key_edge_edit_enabled = true;
 		bool allow_unselected_key_edit = true;
 		bool allow_right_mouse_selection = false;
+		bool header_resizing = false;
+		bool middle_mouse_panning = false;
 		bool clip_key_edge_dragging = false;
 		bool clip_key_edge_drag_moved = false;
 		float long_press_time = 0.4f;
@@ -160,6 +175,11 @@ namespace godot {
 		Vector2 right_select_end;
 		double key_drag_start_value = 0.0;
 		int key_drag_anchor_track = -1;
+		HeaderResizeTarget header_resize_target = HEADER_RESIZE_TARGET_NONE;
+		int header_resize_track_index = -1;
+		float header_resize_start_mouse_x = 0.0f;
+		float header_resize_start_width = 0.0f;
+		Vector2 middle_mouse_pan_last_position;
 		TimelineTrackKey *clip_key_edge_drag_key = nullptr;
 		ClipKeyEditEdge clip_key_edge_drag_edge = CLIP_KEY_EDIT_EDGE_NONE;
 		double clip_key_edge_drag_head_time = 0.0;
@@ -205,6 +225,11 @@ namespace godot {
 		void _stop_internal_process_if_idle();
 		double _position_to_key_value(double p_y) const;
 		double _get_playhead_drag_time(double p_y) const;
+		bool _find_header_resize_edge_at_position(const Vector2 &p_position, HeaderResizeTarget &r_target, int &r_track_index) const;
+		bool _update_header_resize_cursor(const Vector2 &p_position);
+		void _begin_header_resize_drag(HeaderResizeTarget p_target, int p_track_index, const Vector2 &p_position);
+		void _update_header_resize_drag(const Vector2 &p_position);
+		void _finish_header_resize_drag();
 		bool _find_clip_key_edge_at_position(const Vector2 &p_position, int &r_track_index, TimelineTrackKey *&r_key, ClipKeyEditEdge &r_edge) const;
 		void _update_clip_key_edge_cursor(const Vector2 &p_position);
 		void _begin_clip_key_edge_drag(TimelineTrackKey *p_key, ClipKeyEditEdge p_edge);
@@ -214,6 +239,7 @@ namespace godot {
 		void _update_key_drag(const Vector2& p_position);
 		void _finish_key_drag();
 		void _move_key_to_track(TimelineTrackKey* p_key, int p_from_track, int p_to_track);
+		bool _can_move_key_to_track(const TimelineTrackKey* p_key, int p_track_index) const;
 		double _snap_key_time(double p_time) const;
 		bool _keys_overlap(const TimelineTrackKey* p_a, const TimelineTrackKey* p_b) const;
 		bool _has_key_overlap_in_track(const CachedTrack &p_track, const TimelineTrackKey *p_key) const;
@@ -226,6 +252,10 @@ namespace godot {
 		void _scroll(ScrollBar* p_scroll, double p_amount);
 		void _scroll_to(ScrollBar* p_scroll, double p_pos);
 		void _cancel_drag();
+		void _begin_middle_mouse_pan(const Vector2 &p_position);
+		void _update_middle_mouse_pan(const Vector2 &p_position);
+		void _finish_middle_mouse_pan(const Vector2 &p_position);
+		bool _wrap_middle_mouse_pan_position(Vector2 &r_position);
 
 		void _draw_header(const Point2& pos, const float width, Ref<StyleBox> header_bg, Ref<Texture2D> header_icon);
 		void _draw_time_ruler_ticks(float p_header_width);
@@ -250,8 +280,9 @@ namespace godot {
 		Array beat_map;
 		Array time_map;
 		double _beat_total = 0;
-		int _row_total = 0;
+		double _row_total = 0.0;
 
+		std::vector<BPM> _get_sorted_bpms() const;
 		void _build_time_to_beat_map();
 		void _build_beat_to_time_map();
 		void _calculate_beat_total();
@@ -275,11 +306,13 @@ namespace godot {
 		};
 		std::vector<CachedTrack> _track_cache;
 		void _rebuild_track_cache();
+		void _sync_track_cache_geometry();
 		void _refresh_track_key_metrics();
 		void _get_visible_key_time_range(float p_y_margin, double& r_start, double& r_end) const;
 		double _key_to_y(const TimelineTrackKey* p_key) const;
 		double _key_end_to_y(const TimelineTrackKey* p_key) const;
 		float _get_instant_key_scale(const TimelineTrackKey* p_key) const;
+		float _get_instant_key_size(const TimelineTrackKey* p_key) const;
 		Rect2 _get_instant_key_rect(const CachedTrack& p_track, const TimelineTrackKey* p_key, double p_y) const;
 		Rect2 _get_clip_key_rect(const CachedTrack& p_track, double p_y, double p_y_end) const;
 		Ref<StyleBox> _get_instant_key_normal_style(const TimelineTrackKey *p_key) const;
@@ -338,6 +371,9 @@ namespace godot {
 		double get_position_from_frame(int64_t p_frame) const;
 		double get_position_from_beat(double p_beat) const;
 
+		HScrollBar* get_h_scroll_bar() const;
+		VScrollBar* get_v_scroll_bar() const;
+
 		void set_background_color(const Color& p_background_color);
 		Color get_background_color() const;
 
@@ -349,6 +385,9 @@ namespace godot {
 
 		void set_header_height(const float p_height);
 		float get_header_height() const;
+
+		void set_header_resize_enabled(bool p_enabled);
+		bool get_header_resize_enabled() const;
 
 		void set_duration(const double p_duration);
 		double get_duration() const;
@@ -430,6 +469,9 @@ namespace godot {
 
 		void set_deadzone(int p_deadzone);
 		int get_deadzone() const;
+
+		void set_middle_mouse_pan_enabled(bool p_enabled);
+		bool get_middle_mouse_pan_enabled() const;
 
 		void set_draw_minimap(bool p_enabled);
 		bool is_drawing_minimap() const;
