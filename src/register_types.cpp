@@ -1,5 +1,7 @@
 #include "register_types.h"
 
+#include "h_timeline_panel.h"
+#include "timeline_panel_base.h"
 #include "v_timeline_panel.h"
 #include "components/timeline_base.h"
 #include "components/timeline_indicator.h"
@@ -33,7 +35,9 @@ void initialize_timeline_panel_module(ModuleInitializationLevel p_level) {
 
 	GDREGISTER_CLASS(StyleBoxArrow);
 
+	GDREGISTER_VIRTUAL_CLASS(TimelinePanelBase);
 	GDREGISTER_CLASS(VTimelinePanel);
+	GDREGISTER_CLASS(HTimelinePanel);
 }
 
 void uninitialize_timeline_panel_module(ModuleInitializationLevel p_level) {

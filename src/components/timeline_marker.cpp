@@ -33,7 +33,9 @@ namespace godot {
 			return;
 		}
 
-		Point2 pos = Vector2(p_header_rect.position.x, p_header_rect.position.y + p_header_rect.size.y / 2.0);
+		Point2 pos = vertical ?
+			Vector2(p_header_rect.position.x + p_header_rect.size.x / 2.0, p_header_rect.position.y + p_header_rect.size.y / 2.0) :
+			Vector2(p_header_rect.position.x, p_header_rect.position.y + p_header_rect.size.y / 2.0);
 		if (is_show_line()) {
 			RenderingServer::get_singleton()->canvas_item_add_line(
 				p_to_canvas_item,
@@ -51,7 +53,8 @@ namespace godot {
 
 		text_line->clear();
 		text_line->add_string(name, ThemeDB::get_singleton()->get_fallback_font(), get_font_size());
-		text_line->draw(p_to_canvas_item, Vector2(p_header_rect.position.x + 4.0f, pos.y - (get_font_size() / 2.0f) + get_font_offset()), get_font_color());
+		const float text_x = vertical ? p_header_rect.position.x + (p_header_rect.size.x - text_line->get_size().x) * 0.5f : p_header_rect.position.x + 4.0f;
+		text_line->draw(p_to_canvas_item, Vector2(text_x, pos.y - (get_font_size() / 2.0f) + get_font_offset()), get_font_color());
 	}
 
 	void TimelineMarker::set_name(const String& p_name) {

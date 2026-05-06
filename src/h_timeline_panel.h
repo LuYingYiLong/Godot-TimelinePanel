@@ -1,11 +1,11 @@
-#ifndef V_TIMELINE_PANEL_H
-#define V_TIMELINE_PANEL_H
+#ifndef H_TIMELINE_PANEL_H
+#define H_TIMELINE_PANEL_H
 
 #include "timeline_panel_base.h"
 
 namespace godot {
-	class VTimelinePanel : public TimelinePanelBase {
-		GDCLASS(VTimelinePanel, TimelinePanelBase)
+	class HTimelinePanel : public TimelinePanelBase {
+		GDCLASS(HTimelinePanel, TimelinePanelBase)
 
 	protected:
 		static void _bind_methods();
@@ -17,8 +17,8 @@ namespace godot {
 		using BarNumberDirection = TimelinePanelBase::BarNumberDirection;
 		using ScrollMode = TimelinePanelBase::ScrollMode;
 
-		VTimelinePanel();
+		HTimelinePanel();
 	};
 }
 
-#endif // !V_TIMELINE_PANEL_H
+#endif // !H_TIMELINE_PANEL_H

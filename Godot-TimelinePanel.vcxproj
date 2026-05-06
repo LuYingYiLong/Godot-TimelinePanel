@@ -145,8 +145,10 @@
     <ClInclude Include="src\components\timeline_time_ruler.h" />
     <ClInclude Include="src\components\timeline_track.h" />
     <ClInclude Include="src\components\timeline_track_key.h" />
+    <ClInclude Include="src\h_timeline_panel.h" />
     <ClInclude Include="src\register_types.h" />
     <ClInclude Include="src\style\style_box_arrow.h" />
+    <ClInclude Include="src\timeline_panel_base.h" />
     <ClInclude Include="src\v_timeline_panel.h" />
   </ItemGroup>
   <ItemGroup>
@@ -156,8 +158,19 @@
     <ClCompile Include="src\components\timeline_time_ruler.cpp" />
     <ClCompile Include="src\components\timeline_track.cpp" />
     <ClCompile Include="src\components\timeline_track_key.cpp" />
+    <ClCompile Include="src\h_timeline_panel.cpp" />
     <ClCompile Include="src\register_types.cpp" />
     <ClCompile Include="src\style\style_box_arrow.cpp" />
+    <ClCompile Include="src\timeline_panel_base.cpp" />
+    <ClCompile Include="src\timeline_panel_base_draw_vertical.cpp" />
+    <ClCompile Include="src\timeline_panel_base_geometry.cpp" />
+    <ClCompile Include="src\timeline_panel_base_horizontal.cpp" />
+    <ClCompile Include="src\timeline_panel_base_interaction.cpp" />
+    <ClCompile Include="src\timeline_panel_base_keys.cpp" />
+    <ClCompile Include="src\timeline_panel_base_minimap.cpp" />
+    <ClCompile Include="src\timeline_panel_base_properties.cpp" />
+    <ClCompile Include="src\timeline_panel_base_scroll.cpp" />
+    <ClCompile Include="src\timeline_panel_base_style.cpp" />
     <ClCompile Include="src\v_timeline_panel.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
