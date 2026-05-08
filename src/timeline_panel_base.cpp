@@ -106,7 +106,7 @@ namespace godot {
 		ADD_GROUP("Beat", "");
 		ClassDB::bind_method(D_METHOD("set_bpms", "bpms"), &TimelinePanelBase::set_bpms);
 		ClassDB::bind_method(D_METHOD("get_bpms"), &TimelinePanelBase::get_bpms);
-		ADD_PROPERTY(PropertyInfo(Variant::DICTIONARY, "bpms"), "set_bpms", "get_bpms");
+		ADD_PROPERTY(PropertyInfo(Variant::DICTIONARY, "bpms", PROPERTY_HINT_DICTIONARY_TYPE, "float;int"), "set_bpms", "get_bpms");
 
 		ClassDB::bind_method(D_METHOD("set_beat_per_bar", "num"), &TimelinePanelBase::set_beat_per_bar);
 		ClassDB::bind_method(D_METHOD("get_beat_per_bar"), &TimelinePanelBase::get_beat_per_bar);
@@ -156,7 +156,6 @@ namespace godot {
 		ClassDB::bind_method(D_METHOD("get_markers"), &TimelinePanelBase::get_markers);
 		ADD_PROPERTY(PropertyInfo(Variant::ARRAY, "component_markers", PROPERTY_HINT_ARRAY_TYPE, "TimelineMarker"), "set_markers", "get_markers");
 
-		ADD_GROUP("Components", "component_");
 		ClassDB::bind_method(D_METHOD("set_time_ruler", "time_ruler"), &TimelinePanelBase::set_time_ruler);
 		ClassDB::bind_method(D_METHOD("get_time_ruler"), &TimelinePanelBase::get_time_ruler);
 		ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "component_time_ruler", PROPERTY_HINT_RESOURCE_TYPE, "TimelineTimeRuler"), "set_time_ruler", "get_time_ruler");

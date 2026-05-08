@@ -1,9 +1,12 @@
 #include "register_types.h"
 
 #include "h_timeline_panel.h"
+#include "timeline_connection_editor.h"
 #include "timeline_panel_base.h"
 #include "v_timeline_panel.h"
 #include "components/timeline_base.h"
+#include "components/timeline_connection.h"
+#include "components/timeline_connection_point.h"
 #include "components/timeline_indicator.h"
 #include "components/timeline_marker.h"
 #include "components/timeline_time_ruler.h"
@@ -27,6 +30,8 @@ void initialize_timeline_panel_module(ModuleInitializationLevel p_level) {
 	}
 
 	GDREGISTER_VIRTUAL_CLASS(TimelineBase);
+	GDREGISTER_CLASS(TimelineConnectionPoint);
+	GDREGISTER_CLASS(TimelineConnection);
 	GDREGISTER_CLASS(TimelineIndicator);
 	GDREGISTER_CLASS(TimelineMarker);
 	GDREGISTER_CLASS(TimelineTimeRuler);
@@ -35,6 +40,7 @@ void initialize_timeline_panel_module(ModuleInitializationLevel p_level) {
 
 	GDREGISTER_CLASS(StyleBoxArrow);
 
+	GDREGISTER_CLASS(TimelineConnectionEditor);
 	GDREGISTER_VIRTUAL_CLASS(TimelinePanelBase);
 	GDREGISTER_CLASS(VTimelinePanel);
 	GDREGISTER_CLASS(HTimelinePanel);

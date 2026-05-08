@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|Win32">
@@ -140,6 +140,8 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="src\components\timeline_base.h" />
+    <ClInclude Include="src\components\timeline_connection.h" />
+    <ClInclude Include="src\components\timeline_connection_point.h" />
     <ClInclude Include="src\components\timeline_indicator.h" />
     <ClInclude Include="src\components\timeline_marker.h" />
     <ClInclude Include="src\components\timeline_time_ruler.h" />
@@ -148,11 +150,14 @@
     <ClInclude Include="src\h_timeline_panel.h" />
     <ClInclude Include="src\register_types.h" />
     <ClInclude Include="src\style\style_box_arrow.h" />
+    <ClInclude Include="src\timeline_connection_editor.h" />
     <ClInclude Include="src\timeline_panel_base.h" />
     <ClInclude Include="src\v_timeline_panel.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\components\timeline_base.cpp" />
+    <ClCompile Include="src\components\timeline_connection.cpp" />
+    <ClCompile Include="src\components\timeline_connection_point.cpp" />
     <ClCompile Include="src\components\timeline_indicator.cpp" />
     <ClCompile Include="src\components\timeline_marker.cpp" />
     <ClCompile Include="src\components\timeline_time_ruler.cpp" />
@@ -161,6 +166,7 @@
     <ClCompile Include="src\h_timeline_panel.cpp" />
     <ClCompile Include="src\register_types.cpp" />
     <ClCompile Include="src\style\style_box_arrow.cpp" />
+    <ClCompile Include="src\timeline_connection_editor.cpp" />
     <ClCompile Include="src\timeline_panel_base.cpp" />
     <ClCompile Include="src\timeline_panel_base_draw_vertical.cpp" />
     <ClCompile Include="src\timeline_panel_base_geometry.cpp" />
