@@ -55,9 +55,12 @@ namespace godot {
 		};
 		Dictionary bpms;
 		Ref<TimelineIndicator> playhead;
+		bool playhead_drag_enabled = true;
+		bool playhead_dragging = false;
 		float scroll_step = 64.0f;
 		bool scroll_enabled = true;
 		bool updating_scroll = false;
+		bool middle_mouse_panning = false;
 		bool edit_enabled = true;
 		float handle_radius = 4.0f;
 		bool ruler_enabled = true;
@@ -118,10 +121,20 @@ namespace godot {
 		Ref<StyleBox> _get_key_normal_style() const;
 		Ref<StyleBox> _get_key_selected_style() const;
 		Ref<StyleBox> _get_handle_style() const;
+		float _get_smart_scroll_step(bool p_horizontal) const;
 		void _scroll(const Vector2 &p_delta);
+		void _zoom_at_position(const Vector2 &p_position, float p_factor);
+		void _pan_view(const Vector2 &p_screen_delta);
 		void _update_scroll_bars();
 		void _h_scroll_changed(double p_value);
 		void _v_scroll_changed(double p_value);
+		bool _is_playhead_hit_at_position(const Vector2 &p_position) const;
+		bool _is_playhead_drag_area_at_position(const Vector2 &p_position) const;
+		double _get_time_at_position(const Vector2 &p_position) const;
+		TypedArray<TimelineConnectionPoint> _get_selected_points() const;
+		bool _clear_point_selection();
+		void _select_point(const Ref<TimelineConnection> &p_connection, int p_point_index, bool p_additive, bool p_toggle);
+		void _emit_selection_changed();
 		bool _find_edit_target_at_position(const Vector2 &p_position, Ref<TimelineConnection> &r_connection, DragTarget &r_target, int &r_point_index, Vector2 &r_content_offset) const;
 		void _update_drag(const Vector2 &p_position);
 		void _finish_drag();
@@ -178,6 +191,11 @@ namespace godot {
 
 		void set_playhead(Ref<TimelineIndicator> p_playhead);
 		Ref<TimelineIndicator> get_playhead() const;
+
+		void set_playhead_drag_enabled(bool p_enabled);
+		bool is_playhead_drag_enabled() const;
+
+		TypedArray<TimelineConnectionPoint> get_selected_points() const;
 
 		double get_time_from_position(double p_position) const;
 		double get_frame_from_position(double p_position) const;
@@ -236,6 +254,18 @@ namespace godot {
 
 		void set_range_max(const Vector2 &p_max);
 		Vector2 get_range_max() const;
+
+		void set_range_start_time(double p_time);
+		double get_range_start_time() const;
+
+		void set_range_end_time(double p_time);
+		double get_range_end_time() const;
+
+		void set_range_min_y(float p_y);
+		float get_range_min_y() const;
+
+		void set_range_max_y(float p_y);
+		float get_range_max_y() const;
 
 		void set_key_scale(float p_scale);
 		float get_key_scale() const;

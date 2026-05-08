@@ -74,6 +74,7 @@ namespace godot {
 		ClassDB::bind_method(D_METHOD("get_connection", "index"), &TimelineConnectionEditor::get_connection);
 		ClassDB::bind_method(D_METHOD("get_connection_count"), &TimelineConnectionEditor::get_connection_count);
 		ClassDB::bind_method(D_METHOD("get_connection_index", "connection"), &TimelineConnectionEditor::get_connection_index);
+		ClassDB::bind_method(D_METHOD("get_selected_points"), &TimelineConnectionEditor::get_selected_points);
 
 		ClassDB::bind_method(D_METHOD("get_h_scroll_bar"), &TimelineConnectionEditor::get_h_scroll_bar);
 		ClassDB::bind_method(D_METHOD("get_v_scroll_bar"), &TimelineConnectionEditor::get_v_scroll_bar);
@@ -99,6 +100,10 @@ namespace godot {
 		ClassDB::bind_method(D_METHOD("get_playhead"), &TimelineConnectionEditor::get_playhead);
 		ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "component_playhead", PROPERTY_HINT_RESOURCE_TYPE, "TimelineIndicator"), "set_playhead", "get_playhead");
 		ADD_GROUP("", "");
+
+		ClassDB::bind_method(D_METHOD("set_playhead_drag_enabled", "enabled"), &TimelineConnectionEditor::set_playhead_drag_enabled);
+		ClassDB::bind_method(D_METHOD("is_playhead_drag_enabled"), &TimelineConnectionEditor::is_playhead_drag_enabled);
+		ADD_PROPERTY(PropertyInfo(Variant::BOOL, "playhead_drag_enabled"), "set_playhead_drag_enabled", "is_playhead_drag_enabled");
 
 		ClassDB::bind_method(D_METHOD("get_time_from_position", "position"), &TimelineConnectionEditor::get_time_from_position);
 		ClassDB::bind_method(D_METHOD("get_frame_from_position", "position"), &TimelineConnectionEditor::get_frame_from_position);
@@ -147,11 +152,25 @@ namespace godot {
 
 		ClassDB::bind_method(D_METHOD("set_range_min", "min"), &TimelineConnectionEditor::set_range_min);
 		ClassDB::bind_method(D_METHOD("get_range_min"), &TimelineConnectionEditor::get_range_min);
-		ADD_PROPERTY(PropertyInfo(Variant::VECTOR2, "range_min"), "set_range_min", "get_range_min");
 
 		ClassDB::bind_method(D_METHOD("set_range_max", "max"), &TimelineConnectionEditor::set_range_max);
 		ClassDB::bind_method(D_METHOD("get_range_max"), &TimelineConnectionEditor::get_range_max);
-		ADD_PROPERTY(PropertyInfo(Variant::VECTOR2, "range_max"), "set_range_max", "get_range_max");
+
+		ClassDB::bind_method(D_METHOD("set_range_start_time", "time"), &TimelineConnectionEditor::set_range_start_time);
+		ClassDB::bind_method(D_METHOD("get_range_start_time"), &TimelineConnectionEditor::get_range_start_time);
+		ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "range_start_time", PROPERTY_HINT_RANGE, "0,99999,0.01,or_greater,suffix:s"), "set_range_start_time", "get_range_start_time");
+
+		ClassDB::bind_method(D_METHOD("set_range_end_time", "time"), &TimelineConnectionEditor::set_range_end_time);
+		ClassDB::bind_method(D_METHOD("get_range_end_time"), &TimelineConnectionEditor::get_range_end_time);
+		ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "range_end_time", PROPERTY_HINT_RANGE, "0,99999,0.01,or_greater,suffix:s"), "set_range_end_time", "get_range_end_time");
+
+		ClassDB::bind_method(D_METHOD("set_range_min_y", "y"), &TimelineConnectionEditor::set_range_min_y);
+		ClassDB::bind_method(D_METHOD("get_range_min_y"), &TimelineConnectionEditor::get_range_min_y);
+		ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "range_min_y"), "set_range_min_y", "get_range_min_y");
+
+		ClassDB::bind_method(D_METHOD("set_range_max_y", "y"), &TimelineConnectionEditor::set_range_max_y);
+		ClassDB::bind_method(D_METHOD("get_range_max_y"), &TimelineConnectionEditor::get_range_max_y);
+		ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "range_max_y"), "set_range_max_y", "get_range_max_y");
 
 		ADD_GROUP("Ruler", "ruler_");
 		ClassDB::bind_method(D_METHOD("set_ruler_enabled", "enabled"), &TimelineConnectionEditor::set_ruler_enabled);
@@ -232,6 +251,32 @@ namespace godot {
 		ADD_GROUP("", "");
 
 		GDVIRTUAL_BIND(_draw_connection, "to_canvas_item", "connection", "from_position", "to_position");
+
+		ADD_SIGNAL(MethodInfo("current_time_changed", PropertyInfo(Variant::FLOAT, "time")));
+		ADD_SIGNAL(MethodInfo("playhead_drag_started", PropertyInfo(Variant::FLOAT, "time")));
+		ADD_SIGNAL(MethodInfo("playhead_dragged", PropertyInfo(Variant::FLOAT, "time")));
+		ADD_SIGNAL(MethodInfo("playhead_drag_ended", PropertyInfo(Variant::FLOAT, "time")));
+		ADD_SIGNAL(MethodInfo("selection_changed", PropertyInfo(Variant::ARRAY, "points", PROPERTY_HINT_ARRAY_TYPE, "TimelineConnectionPoint")));
+		ADD_SIGNAL(MethodInfo("connection_point_selected",
+				PropertyInfo(Variant::OBJECT, "connection", PROPERTY_HINT_RESOURCE_TYPE, "TimelineConnection"),
+				PropertyInfo(Variant::OBJECT, "point"),
+				PropertyInfo(Variant::INT, "point_index")));
+		ADD_SIGNAL(MethodInfo("connection_point_drag_started",
+				PropertyInfo(Variant::OBJECT, "connection", PROPERTY_HINT_RESOURCE_TYPE, "TimelineConnection"),
+				PropertyInfo(Variant::OBJECT, "point"),
+				PropertyInfo(Variant::INT, "point_index"),
+				PropertyInfo(Variant::INT, "target")));
+		ADD_SIGNAL(MethodInfo("connection_point_dragged",
+				PropertyInfo(Variant::OBJECT, "connection", PROPERTY_HINT_RESOURCE_TYPE, "TimelineConnection"),
+				PropertyInfo(Variant::OBJECT, "point"),
+				PropertyInfo(Variant::INT, "point_index"),
+				PropertyInfo(Variant::INT, "target"),
+				PropertyInfo(Variant::VECTOR2, "position")));
+		ADD_SIGNAL(MethodInfo("connection_point_drag_ended",
+				PropertyInfo(Variant::OBJECT, "connection", PROPERTY_HINT_RESOURCE_TYPE, "TimelineConnection"),
+				PropertyInfo(Variant::OBJECT, "point"),
+				PropertyInfo(Variant::INT, "point_index"),
+				PropertyInfo(Variant::INT, "target")));
 	}
 
 	void TimelineConnectionEditor::_validate_property(PropertyInfo &p_property) const {
@@ -634,8 +679,43 @@ namespace godot {
 		return style_cache.handle_fallback;
 	}
 
+	float TimelineConnectionEditor::_get_smart_scroll_step(bool p_horizontal) const {
+		const Rect2 content_rect = _get_content_rect();
+		const float scale_value = p_horizontal ? content_scale.x : content_scale.y;
+		const float safe_scale = Math::abs(scale_value) < 0.0001f ? 1.0f : Math::abs(scale_value);
+		const float viewport_size = p_horizontal ? content_rect.size.x : content_rect.size.y;
+		const float visible_units = viewport_size / safe_scale;
+		return CLAMP(visible_units * 0.12f, 0.25f, 256.0f);
+	}
+
 	void TimelineConnectionEditor::_scroll(const Vector2 &p_delta) {
 		set_scroll_offset(scroll_offset + p_delta);
+	}
+
+	void TimelineConnectionEditor::_zoom_at_position(const Vector2 &p_position, float p_factor) {
+		if (p_factor <= 0.0f) {
+			return;
+		}
+
+		const Vector2 content_before = _screen_to_content(p_position);
+		const Vector2 origin = _get_content_origin();
+		const float sign_x = content_scale.x < 0.0f ? -1.0f : 1.0f;
+		const float sign_y = content_scale.y < 0.0f ? -1.0f : 1.0f;
+		const float next_scale_x = CLAMP(Math::abs(content_scale.x) * p_factor, 0.01f, 4096.0f) * sign_x;
+		const float next_scale_y = CLAMP(Math::abs(content_scale.y) * p_factor, 0.01f, 4096.0f) * sign_y;
+		content_scale = Vector2(next_scale_x, next_scale_y);
+		scroll_offset = Vector2(
+			content_before.x - (p_position.x - origin.x) / next_scale_x,
+			content_before.y - (p_position.y - origin.y) / next_scale_y
+		);
+		_update_scroll_bars();
+		queue_redraw();
+	}
+
+	void TimelineConnectionEditor::_pan_view(const Vector2 &p_screen_delta) {
+		const float scale_x = Math::abs(content_scale.x) < 0.0001f ? 1.0f : content_scale.x;
+		const float scale_y = Math::abs(content_scale.y) < 0.0001f ? 1.0f : content_scale.y;
+		_scroll(Vector2(-p_screen_delta.x / scale_x, -p_screen_delta.y / scale_y));
 	}
 
 	void TimelineConnectionEditor::_update_scroll_bars() {
@@ -687,7 +767,7 @@ namespace godot {
 			hscroll->set_min(min_x);
 			hscroll->set_max(max_x);
 			hscroll->set_page(page_x);
-			hscroll->set_custom_step(scroll_step);
+			hscroll->set_custom_step(_get_smart_scroll_step(true));
 			hscroll->show();
 		}
 		else {
@@ -702,7 +782,7 @@ namespace godot {
 			vscroll->set_min(min_y);
 			vscroll->set_max(max_y);
 			vscroll->set_page(page_y);
-			vscroll->set_custom_step(scroll_step);
+			vscroll->set_custom_step(_get_smart_scroll_step(false));
 			vscroll->show();
 		}
 		else {
@@ -731,6 +811,133 @@ namespace godot {
 
 		scroll_offset.y = static_cast<float>(p_value);
 		queue_redraw();
+	}
+
+	bool TimelineConnectionEditor::_is_playhead_hit_at_position(const Vector2 &p_position) const {
+		if (!playhead_drag_enabled || playhead.is_null()) {
+			return false;
+		}
+
+		const Rect2 content_rect = _get_content_rect();
+		const Rect2 clip_rect = _get_draw_clip_rect();
+		if (content_rect.size.x <= 0.0f || content_rect.size.y <= 0.0f || clip_rect.size.x <= 0.0f || clip_rect.size.y <= 0.0f) {
+			return false;
+		}
+
+		const float x = static_cast<float>(get_position_from_time(current_time));
+		const float header_height = ruler_enabled ? MAX(content_rect.position.y, 16.0f) : 16.0f;
+		const Rect2 header_rect(Vector2(x - 24.0f, 0.0f), Vector2(48.0f, header_height));
+		if (header_rect.has_point(p_position)) {
+			return true;
+		}
+
+		const float hit_width = 6.0f;
+		const Rect2 line_rect(Vector2(x - hit_width, content_rect.position.y), Vector2(hit_width * 2.0f, content_rect.size.y));
+		return line_rect.has_point(p_position) && clip_rect.has_point(p_position);
+	}
+
+	bool TimelineConnectionEditor::_is_playhead_drag_area_at_position(const Vector2 &p_position) const {
+		if (!playhead_drag_enabled) {
+			return false;
+		}
+
+		if (_is_playhead_hit_at_position(p_position)) {
+			return true;
+		}
+
+		if (!ruler_enabled) {
+			return false;
+		}
+
+		const Rect2 content_rect = _get_content_rect();
+		if (content_rect.size.x <= 0.0f || content_rect.position.y <= 0.0f) {
+			return false;
+		}
+
+		const Rect2 time_ruler_rect(Vector2(content_rect.position.x, 0.0f), Vector2(content_rect.size.x, content_rect.position.y));
+		return time_ruler_rect.has_point(p_position);
+	}
+
+	double TimelineConnectionEditor::_get_time_at_position(const Vector2 &p_position) const {
+		double time = _screen_to_content(p_position).x;
+		if (range_limited) {
+			const double min_time = MIN(range_min.x, range_max.x);
+			const double max_time = MAX(range_min.x, range_max.x);
+			time = CLAMP(time, min_time, max_time);
+		}
+		return time;
+	}
+
+	TypedArray<TimelineConnectionPoint> TimelineConnectionEditor::_get_selected_points() const {
+		TypedArray<TimelineConnectionPoint> selected_points;
+		for (int i = 0; i < connections.size(); i++) {
+			Ref<TimelineConnection> connection = connections[i];
+			if (connection.is_null()) {
+				continue;
+			}
+
+			const int point_count = connection->get_point_count();
+			for (int point_index = 0; point_index < point_count; point_index++) {
+				TimelineConnectionPoint* point = connection->get_point(point_index);
+				if (point != nullptr && point->is_selected()) {
+					selected_points.append(point);
+				}
+			}
+		}
+		return selected_points;
+	}
+
+	bool TimelineConnectionEditor::_clear_point_selection() {
+		bool changed = false;
+		for (int i = 0; i < connections.size(); i++) {
+			Ref<TimelineConnection> connection = connections[i];
+			if (connection.is_null()) {
+				continue;
+			}
+
+			const int point_count = connection->get_point_count();
+			for (int point_index = 0; point_index < point_count; point_index++) {
+				TimelineConnectionPoint* point = connection->get_point(point_index);
+				if (point != nullptr && point->is_selected()) {
+					point->set_selected_no_signal(false);
+					changed = true;
+				}
+			}
+		}
+		return changed;
+	}
+
+	void TimelineConnectionEditor::_select_point(const Ref<TimelineConnection> &p_connection, int p_point_index, bool p_additive, bool p_toggle) {
+		if (p_connection.is_null() || p_point_index < 0 || p_point_index >= p_connection->get_point_count()) {
+			return;
+		}
+
+		bool changed = false;
+		TimelineConnectionPoint* point = p_connection->get_point(p_point_index);
+		if (!p_additive) {
+			changed = _clear_point_selection();
+		}
+
+		if (point != nullptr) {
+			const bool selected = point->is_selected();
+			const bool next_selected = p_toggle ? !selected : true;
+			if (selected != next_selected) {
+				point->set_selected_no_signal(next_selected);
+				changed = true;
+			}
+			if (next_selected) {
+				emit_signal("connection_point_selected", p_connection, point, p_point_index);
+			}
+		}
+
+		if (changed) {
+			_emit_selection_changed();
+			queue_redraw();
+		}
+	}
+
+	void TimelineConnectionEditor::_emit_selection_changed() {
+		emit_signal("selection_changed", _get_selected_points());
 	}
 
 	bool TimelineConnectionEditor::_find_edit_target_at_position(const Vector2 &p_position, Ref<TimelineConnection> &r_connection, DragTarget &r_target, int &r_point_index, Vector2 &r_content_offset) const {
@@ -793,24 +1000,38 @@ namespace godot {
 		}
 
 		const Vector2 target_content = _clamp_content_position(_screen_to_content(p_position) + drag_content_offset);
+		Vector2 signal_position = target_content;
 		switch (drag_target) {
 		case DRAG_TARGET_POINT:
 			dragged_connection->set_point_position(drag_point_index, target_content);
 			break;
 		case DRAG_TARGET_IN_HANDLE:
 			dragged_connection->set_point_in_handle(drag_point_index, target_content - dragged_connection->get_point_position(drag_point_index));
+			signal_position = dragged_connection->get_point_position(drag_point_index) + dragged_connection->get_point_in_handle(drag_point_index);
 			break;
 		case DRAG_TARGET_OUT_HANDLE:
 			dragged_connection->set_point_out_handle(drag_point_index, target_content - dragged_connection->get_point_position(drag_point_index));
+			signal_position = dragged_connection->get_point_position(drag_point_index) + dragged_connection->get_point_out_handle(drag_point_index);
 			break;
 		case DRAG_TARGET_NONE:
 		default:
 			break;
 		}
+
+		TimelineConnectionPoint* point = dragged_connection->get_point(drag_point_index);
+		if (point != nullptr) {
+			emit_signal("connection_point_dragged", dragged_connection, point, drag_point_index, static_cast<int>(drag_target), signal_position);
+		}
 		queue_redraw();
 	}
 
 	void TimelineConnectionEditor::_finish_drag() {
+		if (dragged_connection.is_valid() && drag_target != DRAG_TARGET_NONE) {
+			TimelineConnectionPoint* point = dragged_connection->get_point(drag_point_index);
+			if (point != nullptr) {
+				emit_signal("connection_point_drag_ended", dragged_connection, point, drag_point_index, static_cast<int>(drag_target));
+			}
+		}
 		dragged_connection = Ref<TimelineConnection>();
 		drag_target = DRAG_TARGET_NONE;
 		drag_point_index = -1;
@@ -819,6 +1040,10 @@ namespace godot {
 	}
 
 	void TimelineConnectionEditor::_update_hover_cursor(const Vector2 &p_position) {
+		if (_is_playhead_drag_area_at_position(p_position)) {
+			return;
+		}
+
 		Ref<TimelineConnection> connection;
 		DragTarget target = DRAG_TARGET_NONE;
 		int point_index = -1;
@@ -1180,26 +1405,66 @@ namespace godot {
 
 	void TimelineConnectionEditor::_gui_input(const Ref<InputEvent> &p_gui_input) {
 		Ref<InputEventMouseButton> mouse_button = p_gui_input;
+		if (mouse_button.is_valid() && mouse_button->get_button_index() == MouseButton::MOUSE_BUTTON_MIDDLE) {
+			if (mouse_button->is_pressed() && scroll_enabled && _get_content_rect().has_point(mouse_button->get_position())) {
+				middle_mouse_panning = true;
+				set_default_cursor_shape(Control::CURSOR_CROSS);
+				accept_event();
+			}
+			else if (!mouse_button->is_pressed() && middle_mouse_panning) {
+				middle_mouse_panning = false;
+				set_default_cursor_shape(Control::CURSOR_ARROW);
+				accept_event();
+			}
+			return;
+		}
+
 		if (mouse_button.is_valid() && mouse_button->is_pressed() && scroll_enabled && _get_content_rect().has_point(mouse_button->get_position())) {
 			const float factor = mouse_button->get_factor() == 0.0f ? 1.0f : mouse_button->get_factor();
 			const float horizontal_direction = content_scale.x < 0.0f ? -1.0f : 1.0f;
 			const float vertical_direction = content_scale.y < 0.0f ? -1.0f : 1.0f;
 			Vector2 scroll_delta;
+			bool wheel_handled = false;
 			switch (mouse_button->get_button_index()) {
-			case MouseButton::MOUSE_BUTTON_WHEEL_UP:
-				scroll_delta = mouse_button->is_shift_pressed() ? Vector2(-scroll_step * factor * horizontal_direction, 0.0f) : Vector2(0.0f, -scroll_step * factor * vertical_direction);
+			case MouseButton::MOUSE_BUTTON_WHEEL_UP: {
+				if (mouse_button->is_ctrl_pressed()) {
+					scroll_delta = Vector2(-_get_smart_scroll_step(true) * factor * horizontal_direction, 0.0f);
+				}
+				else if (mouse_button->is_shift_pressed()) {
+					scroll_delta = Vector2(0.0f, -_get_smart_scroll_step(false) * factor * vertical_direction);
+				}
+				else {
+					_zoom_at_position(mouse_button->get_position(), static_cast<float>(std::pow(1.12f, factor)));
+					wheel_handled = true;
+				}
 				break;
-			case MouseButton::MOUSE_BUTTON_WHEEL_DOWN:
-				scroll_delta = mouse_button->is_shift_pressed() ? Vector2(scroll_step * factor * horizontal_direction, 0.0f) : Vector2(0.0f, scroll_step * factor * vertical_direction);
+			}
+			case MouseButton::MOUSE_BUTTON_WHEEL_DOWN: {
+				if (mouse_button->is_ctrl_pressed()) {
+					scroll_delta = Vector2(_get_smart_scroll_step(true) * factor * horizontal_direction, 0.0f);
+				}
+				else if (mouse_button->is_shift_pressed()) {
+					scroll_delta = Vector2(0.0f, _get_smart_scroll_step(false) * factor * vertical_direction);
+				}
+				else {
+					_zoom_at_position(mouse_button->get_position(), static_cast<float>(std::pow(1.0f / 1.12f, factor)));
+					wheel_handled = true;
+				}
 				break;
+			}
 			case MouseButton::MOUSE_BUTTON_WHEEL_LEFT:
-				scroll_delta = Vector2(-scroll_step * factor * horizontal_direction, 0.0f);
+				scroll_delta = Vector2(-_get_smart_scroll_step(true) * factor * horizontal_direction, 0.0f);
 				break;
 			case MouseButton::MOUSE_BUTTON_WHEEL_RIGHT:
-				scroll_delta = Vector2(scroll_step * factor * horizontal_direction, 0.0f);
+				scroll_delta = Vector2(_get_smart_scroll_step(true) * factor * horizontal_direction, 0.0f);
 				break;
 			default:
 				break;
+			}
+
+			if (wheel_handled) {
+				accept_event();
+				return;
 			}
 
 			if (scroll_delta != Vector2()) {
@@ -1211,18 +1476,42 @@ namespace godot {
 
 		if (mouse_button.is_valid() && mouse_button->get_button_index() == MouseButton::MOUSE_BUTTON_LEFT) {
 			if (mouse_button->is_pressed()) {
+				if (_is_playhead_drag_area_at_position(mouse_button->get_position())) {
+					playhead_dragging = true;
+					set_current_time(_get_time_at_position(mouse_button->get_position()));
+					emit_signal("playhead_drag_started", current_time);
+					accept_event();
+					return;
+				}
+
 				Ref<TimelineConnection> connection;
 				DragTarget target = DRAG_TARGET_NONE;
 				int point_index = -1;
 				Vector2 content_offset_found;
 				if (_find_edit_target_at_position(mouse_button->get_position(), connection, target, point_index, content_offset_found)) {
+					_select_point(connection, point_index, mouse_button->is_shift_pressed(), mouse_button->is_shift_pressed());
 					dragged_connection = connection;
 					drag_target = target;
 					drag_point_index = point_index;
 					drag_content_offset = content_offset_found;
+					TimelineConnectionPoint* point = dragged_connection->get_point(drag_point_index);
+					if (point != nullptr) {
+						emit_signal("connection_point_drag_started", dragged_connection, point, drag_point_index, static_cast<int>(drag_target));
+					}
 					set_default_cursor_shape(Control::CURSOR_MOVE);
 					accept_event();
 				}
+				else if (_get_content_rect().has_point(mouse_button->get_position()) && _clear_point_selection()) {
+					_emit_selection_changed();
+					queue_redraw();
+				}
+			}
+			else if (playhead_dragging) {
+				set_current_time(_get_time_at_position(mouse_button->get_position()));
+				playhead_dragging = false;
+				set_default_cursor_shape(Control::CURSOR_ARROW);
+				emit_signal("playhead_drag_ended", current_time);
+				accept_event();
 			}
 			else if (drag_target != DRAG_TARGET_NONE) {
 				_finish_drag();
@@ -1233,6 +1522,20 @@ namespace godot {
 
 		Ref<InputEventMouseMotion> mouse_motion = p_gui_input;
 		if (mouse_motion.is_valid()) {
+			if (middle_mouse_panning) {
+				_pan_view(mouse_motion->get_relative());
+				set_default_cursor_shape(Control::CURSOR_CROSS);
+				accept_event();
+				return;
+			}
+
+			if (playhead_dragging) {
+				set_current_time(_get_time_at_position(mouse_motion->get_position()));
+				emit_signal("playhead_dragged", current_time);
+				accept_event();
+				return;
+			}
+
 			if (drag_target != DRAG_TARGET_NONE) {
 				_update_drag(mouse_motion->get_position());
 				set_default_cursor_shape(Control::CURSOR_MOVE);
@@ -1372,7 +1675,12 @@ namespace godot {
 	}
 
 	void TimelineConnectionEditor::set_current_time(double p_time) {
+		if (Math::is_equal_approx(current_time, p_time)) {
+			return;
+		}
+
 		current_time = p_time;
+		emit_signal("current_time_changed", current_time);
 		queue_redraw();
 	}
 
@@ -1429,6 +1737,22 @@ namespace godot {
 		return playhead;
 	}
 
+	void TimelineConnectionEditor::set_playhead_drag_enabled(bool p_enabled) {
+		playhead_drag_enabled = p_enabled;
+		if (!playhead_drag_enabled) {
+			playhead_dragging = false;
+		}
+		queue_redraw();
+	}
+
+	bool TimelineConnectionEditor::is_playhead_drag_enabled() const {
+		return playhead_drag_enabled;
+	}
+
+	TypedArray<TimelineConnectionPoint> TimelineConnectionEditor::get_selected_points() const {
+		return _get_selected_points();
+	}
+
 	double TimelineConnectionEditor::get_time_from_position(double p_position) const {
 		return _screen_to_content(Vector2(static_cast<float>(p_position), 0.0f)).x;
 	}
@@ -1466,10 +1790,10 @@ namespace godot {
 	void TimelineConnectionEditor::set_scroll_step(float p_step) {
 		scroll_step = MAX(p_step, 0.0f);
 		if (hscroll != nullptr) {
-			hscroll->set_custom_step(scroll_step);
+			hscroll->set_custom_step(_get_smart_scroll_step(true));
 		}
 		if (vscroll != nullptr) {
-			vscroll->set_custom_step(scroll_step);
+			vscroll->set_custom_step(_get_smart_scroll_step(false));
 		}
 	}
 
@@ -1616,6 +1940,46 @@ namespace godot {
 
 	Vector2 TimelineConnectionEditor::get_range_max() const {
 		return range_max;
+	}
+
+	void TimelineConnectionEditor::set_range_start_time(double p_time) {
+		range_min.x = static_cast<float>(p_time);
+		_update_scroll_bars();
+		queue_redraw();
+	}
+
+	double TimelineConnectionEditor::get_range_start_time() const {
+		return range_min.x;
+	}
+
+	void TimelineConnectionEditor::set_range_end_time(double p_time) {
+		range_max.x = static_cast<float>(p_time);
+		_update_scroll_bars();
+		queue_redraw();
+	}
+
+	double TimelineConnectionEditor::get_range_end_time() const {
+		return range_max.x;
+	}
+
+	void TimelineConnectionEditor::set_range_min_y(float p_y) {
+		range_min.y = p_y;
+		_update_scroll_bars();
+		queue_redraw();
+	}
+
+	float TimelineConnectionEditor::get_range_min_y() const {
+		return range_min.y;
+	}
+
+	void TimelineConnectionEditor::set_range_max_y(float p_y) {
+		range_max.y = p_y;
+		_update_scroll_bars();
+		queue_redraw();
+	}
+
+	float TimelineConnectionEditor::get_range_max_y() const {
+		return range_max.y;
 	}
 
 	void TimelineConnectionEditor::set_key_scale(float p_scale) {
