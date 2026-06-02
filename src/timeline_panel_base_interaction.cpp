@@ -14,6 +14,7 @@
 #include <godot_cpp/classes/input_event_pan_gesture.hpp>
 #include <godot_cpp/classes/style_box_flat.hpp>
 #include <godot_cpp/classes/theme_db.hpp>
+#include <godot_cpp/variant/dictionary.hpp>
 
 namespace godot {
 	void TimelinePanelBase::_collect_selected_keys() {
@@ -270,8 +271,75 @@ namespace godot {
 	}
 
 
+	void TimelinePanelBase::_update_key_drag_auto_scroll(double p_delta) {
+		if (!key_dragging && !clip_key_edge_dragging) {
+			return;
+		}
+
+		const Vector2 mouse_position = get_local_mouse_position();
+		const float max_speed = 720.0f;
+		bool changed = false;
+
+		if (vscroll != nullptr && vscroll->is_visible() && vertical_scroll_mode != SCROLL_MODE_DISABLED) {
+			const float hscroll_height = hscroll != nullptr && hscroll->is_visible() ? hscroll->get_combined_minimum_size().y : 0.0f;
+			const float top = panel_orientation == PANEL_ORIENTATION_HORIZONTAL ? _get_horizontal_ruler_height() : header_height;
+			const float bottom = get_size().y - hscroll_height;
+			if (bottom > top) {
+				const float margin = CLAMP((bottom - top) * 0.12f, 24.0f, 64.0f);
+				float speed = 0.0f;
+				if (mouse_position.y < top + margin) {
+					speed = -CLAMP((top + margin - mouse_position.y) / margin, 0.0f, 1.0f) * max_speed;
+				}
+				else if (mouse_position.y > bottom - margin) {
+					speed = CLAMP((mouse_position.y - (bottom - margin)) / margin, 0.0f, 1.0f) * max_speed;
+				}
+
+				if (speed != 0.0f) {
+					const double before = vscroll->get_value();
+					_scroll(vscroll, speed * p_delta);
+					changed = changed || !Math::is_equal_approx(before, vscroll->get_value());
+				}
+			}
+		}
+
+		if (hscroll != nullptr && hscroll->is_visible() && horizontal_scroll_mode != SCROLL_MODE_DISABLED) {
+			const float vscroll_width = vscroll != nullptr && vscroll->is_visible() ? vscroll->get_combined_minimum_size().x : 0.0f;
+			const float minimap_visible_width = _is_minimap_visible() ? static_cast<float>(minimap_width) : 0.0f;
+			const float left = panel_orientation == PANEL_ORIENTATION_HORIZONTAL ? _get_horizontal_track_header_width() : 0.0f;
+			const float right = get_size().x - vscroll_width - minimap_visible_width;
+			if (right > left) {
+				const float margin = CLAMP((right - left) * 0.12f, 24.0f, 64.0f);
+				float speed = 0.0f;
+				if (mouse_position.x < left + margin) {
+					speed = -CLAMP((left + margin - mouse_position.x) / margin, 0.0f, 1.0f) * max_speed;
+				}
+				else if (mouse_position.x > right - margin) {
+					speed = CLAMP((mouse_position.x - (right - margin)) / margin, 0.0f, 1.0f) * max_speed;
+				}
+
+				if (speed != 0.0f) {
+					const double before = hscroll->get_value();
+					_scroll(hscroll, speed * p_delta);
+					changed = changed || !Math::is_equal_approx(before, hscroll->get_value());
+				}
+			}
+		}
+
+		if (!changed) {
+			return;
+		}
+
+		if (clip_key_edge_dragging) {
+			_update_clip_key_edge_drag(mouse_position);
+		}
+		else if (key_dragging) {
+			_update_key_drag(mouse_position);
+		}
+	}
+
+
 	void TimelinePanelBase::_stop_internal_process_if_idle() {
-		if (!select_pending && !selecting && !right_selecting && !drag_touching && !drag_touching_deaccel) {
+		if (!select_pending && !selecting && !right_selecting && !drag_touching && !drag_touching_deaccel && !key_dragging && !clip_key_edge_dragging) {
 			set_process_internal(false);
 		}
 	}
@@ -334,17 +402,7 @@ namespace godot {
 				return false;
 			}
 
-			for (int i = 0; i < static_cast<int>(_track_cache.size()) && i < tracks.size(); i++) {
-				const CachedTrack &ct = _track_cache[i];
-				Ref<TimelineTrack> track = tracks[i];
-				if (ct.width <= 0.0f || track.is_null()) continue;
-
-				const float y = ruler_height + ct.x_offset - vscroll_value;
-				if (p_position.y < y || p_position.y > y + ct.width) continue;
-
-				test_edge(track->get_width(), HEADER_RESIZE_TARGET_TRACK, i);
-			}
-
+			test_edge(_get_horizontal_track_header_width(), HEADER_RESIZE_TARGET_HEADER_WIDTH, -1);
 			return r_target != HEADER_RESIZE_TARGET_NONE;
 		}
 
@@ -405,6 +463,9 @@ namespace godot {
 			}
 			target_width = track->get_width();
 		} break;
+		case HEADER_RESIZE_TARGET_HEADER_WIDTH: {
+			target_width = _get_horizontal_track_header_width();
+		} break;
 		case HEADER_RESIZE_TARGET_NONE:
 		default:
 			return;
@@ -446,6 +507,12 @@ namespace godot {
 					track->set_width(width);
 					changed = true;
 				}
+			}
+		} break;
+		case HEADER_RESIZE_TARGET_HEADER_WIDTH: {
+			if (!Math::is_equal_approx(header_height, width)) {
+				header_height = width;
+				changed = true;
 			}
 		} break;
 		case HEADER_RESIZE_TARGET_NONE:
@@ -528,8 +595,9 @@ namespace godot {
 
 
 	void TimelinePanelBase::_update_clip_key_edge_cursor(const Vector2 &p_position) {
+		const Control::CursorShape edge_cursor = panel_orientation == PANEL_ORIENTATION_HORIZONTAL ? Control::CURSOR_HSPLIT : Control::CURSOR_VSPLIT;
 		if (clip_key_edge_dragging) {
-			set_default_cursor_shape(Control::CURSOR_VSPLIT);
+			set_default_cursor_shape(edge_cursor);
 			return;
 		}
 
@@ -537,7 +605,7 @@ namespace godot {
 		TimelineTrackKey *hit_key = nullptr;
 		ClipKeyEditEdge hit_edge = CLIP_KEY_EDIT_EDGE_NONE;
 		if (_find_clip_key_edge_at_position(p_position, hit_track_index, hit_key, hit_edge)) {
-			set_default_cursor_shape(Control::CURSOR_VSPLIT);
+			set_default_cursor_shape(edge_cursor);
 		}
 		else {
 			set_default_cursor_shape(Control::CURSOR_ARROW);
@@ -597,7 +665,8 @@ namespace godot {
 			}
 		}
 
-		set_default_cursor_shape(Control::CURSOR_VSPLIT);
+		set_default_cursor_shape(panel_orientation == PANEL_ORIENTATION_HORIZONTAL ? Control::CURSOR_HSPLIT : Control::CURSOR_VSPLIT);
+		set_process_internal(true);
 	}
 
 
@@ -607,7 +676,7 @@ namespace godot {
 		}
 
 		double dragged_time = _position_to_key_value(panel_orientation == PANEL_ORIENTATION_HORIZONTAL ? p_position.x : p_position.y);
-		if (key_snap_enabled) {
+		if (key_snap_enabled || clip_key_edge_snap_enabled) {
 			dragged_time = _snap_key_time(dragged_time);
 		}
 
@@ -674,10 +743,11 @@ namespace godot {
 		_clear_key_release_preview();
 		_refresh_track_key_metrics();
 		queue_redraw();
+		_stop_internal_process_if_idle();
 	}
 
 
-	void TimelinePanelBase::_begin_key_drag(int p_track_index, TimelineTrackKey* p_key, const Vector2& p_position) {
+	void TimelinePanelBase::_begin_key_drag(int p_track_index, TimelineTrackKey* p_key, const Vector2& p_position, bool p_duplicate) {
 		if (!p_key || p_track_index < 0 || p_track_index >= static_cast<int>(_track_cache.size())) {
 			return;
 		}
@@ -703,21 +773,65 @@ namespace godot {
 		}
 		key_dragging = true;
 		key_drag_moved = false;
+		key_drag_duplicating = false;
 		key_drag_start_value = _position_to_key_value(panel_orientation == PANEL_ORIENTATION_HORIZONTAL ? p_position.x : p_position.y);
 		key_drag_anchor_track = p_track_index;
 		dragged_keys.clear();
 
-		for (int i = 0; i < static_cast<int>(_track_cache.size()); i++) {
-			CachedTrack& ct = _track_cache[i];
-			for (TimelineTrackKey* key : ct.keys) {
-				if (!key || key->is_disabled() || !key->is_selected()) continue;
+		if (p_duplicate && key_alt_duplicate_drag_enabled) {
+			std::vector<DraggedKey> duplicate_dragged_keys;
+			for (int i = 0; i < static_cast<int>(_track_cache.size()); i++) {
+				CachedTrack &ct = _track_cache[i];
+				const std::vector<TimelineTrackKey *> source_keys = ct.keys;
+				for (TimelineTrackKey *key : source_keys) {
+					if (!key || key->is_disabled() || !key->is_selected()) continue;
 
-				DraggedKey dragged_key;
-				dragged_key.key = key;
-				dragged_key.original_track_index = i;
-				dragged_key.current_track_index = i;
-				dragged_key.original_time = key->get_time();
-				dragged_keys.push_back(dragged_key);
+					TimelineTrackKey *duplicate_key = _duplicate_key_for_drag(key, i);
+					if (!duplicate_key) continue;
+
+					DraggedKey dragged_key;
+					dragged_key.key = duplicate_key;
+					dragged_key.original_track_index = i;
+					dragged_key.current_track_index = i;
+					dragged_key.original_time = duplicate_key->get_time();
+					duplicate_dragged_keys.push_back(dragged_key);
+				}
+			}
+
+			if (!duplicate_dragged_keys.empty()) {
+				for (CachedTrack &ct : _track_cache) {
+					for (TimelineTrackKey *key : ct.keys) {
+						if (key) {
+							key->set_selected_no_signal(false);
+						}
+					}
+				}
+				for (DraggedKey &dragged_key : duplicate_dragged_keys) {
+					if (dragged_key.key) {
+						dragged_key.key->set_selected_no_signal(true);
+					}
+				}
+				dragged_keys = duplicate_dragged_keys;
+				key_drag_duplicating = true;
+				_mark_minimap_key_cache_dirty();
+				_refresh_track_key_metrics();
+				queue_redraw();
+			}
+		}
+
+		if (dragged_keys.empty()) {
+			for (int i = 0; i < static_cast<int>(_track_cache.size()); i++) {
+				CachedTrack& ct = _track_cache[i];
+				for (TimelineTrackKey* key : ct.keys) {
+					if (!key || key->is_disabled() || !key->is_selected()) continue;
+
+					DraggedKey dragged_key;
+					dragged_key.key = key;
+					dragged_key.original_track_index = i;
+					dragged_key.current_track_index = i;
+					dragged_key.original_time = key->get_time();
+					dragged_keys.push_back(dragged_key);
+				}
 			}
 		}
 
@@ -729,6 +843,7 @@ namespace godot {
 			dragged_key.original_time = p_key->get_time();
 			dragged_keys.push_back(dragged_key);
 		}
+		set_process_internal(true);
 	}
 
 
@@ -815,15 +930,21 @@ namespace godot {
 
 		key_dragging = false;
 		key_drag_anchor_track = -1;
+		const bool was_duplicating = key_drag_duplicating;
+		key_drag_duplicating = false;
 		dragged_keys.clear();
 
-		if (key_drag_moved) {
+		if (was_duplicating && !key_drag_moved) {
+			_remove_drag_duplicate_keys(moved_keys);
+		}
+		else if (key_drag_moved) {
 			_destroy_moved_key_overlaps(moved_keys);
 		}
 		_clear_key_release_preview();
 		key_drag_moved = false;
 		_refresh_track_key_metrics();
 		queue_redraw();
+		_stop_internal_process_if_idle();
 	}
 
 
@@ -970,32 +1091,33 @@ namespace godot {
 				bool scroll_value_modified = false;
 
 				bool v_scroll_hidden = !vscroll->is_visible() && vertical_scroll_mode != SCROLL_MODE_SHOW_NEVER;
+				bool h_scroll_hidden = !hscroll->is_visible() && horizontal_scroll_mode != SCROLL_MODE_SHOW_NEVER;
+				const bool horizontal_panel = panel_orientation == PANEL_ORIENTATION_HORIZONTAL;
+				const bool vertical_wheel_as_horizontal = horizontal_panel && !mb->is_shift_pressed();
+				const bool vertical_wheel_as_vertical = !horizontal_panel || mb->is_shift_pressed();
 				if (mb->get_button_index() == MouseButton::MOUSE_BUTTON_WHEEL_UP) {
-					// 默认情况下，垂直方向优先。这是一个例外
-					if ((h_scroll_enabled && mb->is_shift_pressed()) || v_scroll_hidden) {
+					if ((vertical_wheel_as_horizontal && h_scroll_enabled) || v_scroll_hidden) {
 						_scroll(hscroll, -hscroll->get_page() / 8 * mb->get_factor());
 						scroll_value_modified = true;
 					}
-					else if (v_scroll_enabled) {
+					else if (vertical_wheel_as_vertical && v_scroll_enabled) {
 						_scroll(vscroll, -vscroll->get_page() / 8 * mb->get_factor());
 						scroll_value_modified = true;
 					}
 				}
 				if (mb->get_button_index() == MouseButton::MOUSE_BUTTON_WHEEL_DOWN) {
-					if ((h_scroll_enabled && mb->is_shift_pressed()) || v_scroll_hidden) {
+					if ((vertical_wheel_as_horizontal && h_scroll_enabled) || v_scroll_hidden) {
 						_scroll(hscroll, hscroll->get_page() / 8 * mb->get_factor());
 						scroll_value_modified = true;
 					}
-					else if (v_scroll_enabled) {
+					else if (vertical_wheel_as_vertical && v_scroll_enabled) {
 						_scroll(vscroll, vscroll->get_page() / 8 * mb->get_factor());
 						scroll_value_modified = true;
 					}
 				}
 
-				bool h_scroll_hidden = !hscroll->is_visible() && horizontal_scroll_mode != SCROLL_MODE_SHOW_NEVER;
 				if (mb->get_button_index() == MouseButton::MOUSE_BUTTON_WHEEL_LEFT) {
-					// 默认情况下，水平方向优先。这是一个例外
-					if ((v_scroll_enabled && mb->is_shift_pressed()) || h_scroll_hidden) {
+					if ((mb->is_shift_pressed() && v_scroll_enabled) || h_scroll_hidden) {
 						_scroll(vscroll, -vscroll->get_page() / 8 * mb->get_factor());
 						scroll_value_modified = true;
 					}
@@ -1005,7 +1127,7 @@ namespace godot {
 					}
 				}
 				if (mb->get_button_index() == MouseButton::MOUSE_BUTTON_WHEEL_RIGHT) {
-					if ((v_scroll_enabled && mb->is_shift_pressed()) || h_scroll_hidden) {
+					if ((mb->is_shift_pressed() && v_scroll_enabled) || h_scroll_hidden) {
 						_scroll(vscroll, vscroll->get_page() / 8 * mb->get_factor());
 						scroll_value_modified = true;
 					}
@@ -1151,7 +1273,7 @@ namespace godot {
 					int hit_track_index = -1;
 					TimelineTrackKey* hit_key = nullptr;
 					if (_find_selected_key_at_position(mb->get_position(), hit_track_index, hit_key)) {
-						_begin_key_drag(hit_track_index, hit_key, mb->get_position());
+						_begin_key_drag(hit_track_index, hit_key, mb->get_position(), mb->is_alt_pressed());
 						accept_event();
 						return;
 					}

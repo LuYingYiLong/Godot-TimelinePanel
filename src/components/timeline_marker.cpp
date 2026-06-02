@@ -33,6 +33,21 @@ namespace godot {
 			return;
 		}
 
+		text_line->clear();
+		text_line->add_string(name, ThemeDB::get_singleton()->get_fallback_font(), get_font_size());
+
+		Rect2 header_rect = p_header_rect;
+		const Vector2 text_size = text_line->get_size();
+		const float text_horizontal_padding = 8.0f;
+		const float required_width = text_size.x + text_horizontal_padding;
+		if (header_rect.size.x < required_width) {
+			if (vertical) {
+				const float header_center_x = p_header_rect.position.x + p_header_rect.size.x * 0.5f;
+				header_rect.position.x = header_center_x - required_width * 0.5f;
+			}
+			header_rect.size.x = required_width;
+		}
+
 		Point2 pos = vertical ?
 			Vector2(p_header_rect.position.x + p_header_rect.size.x / 2.0, p_header_rect.position.y + p_header_rect.size.y / 2.0) :
 			Vector2(p_header_rect.position.x, p_header_rect.position.y + p_header_rect.size.y / 2.0);
@@ -48,12 +63,10 @@ namespace godot {
 
 		Ref<StyleBox> style = get_style();
 		if (style.is_valid()) {
-			style->draw(p_to_canvas_item, p_header_rect);
+			style->draw(p_to_canvas_item, header_rect);
 		}
 
-		text_line->clear();
-		text_line->add_string(name, ThemeDB::get_singleton()->get_fallback_font(), get_font_size());
-		const float text_x = vertical ? p_header_rect.position.x + (p_header_rect.size.x - text_line->get_size().x) * 0.5f : p_header_rect.position.x + 4.0f;
+		const float text_x = vertical ? header_rect.position.x + (header_rect.size.x - text_size.x) * 0.5f : header_rect.position.x + 4.0f;
 		text_line->draw(p_to_canvas_item, Vector2(text_x, pos.y - (get_font_size() / 2.0f) + get_font_offset()), get_font_color());
 	}
 

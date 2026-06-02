@@ -44,6 +44,7 @@ namespace godot {
 		ClassDB::bind_method(D_METHOD("remove_key", "track_index", "key_index"), &TimelinePanelBase::remove_key);
 		ClassDB::bind_method(D_METHOD("clear_track_keys", "track_index"), &TimelinePanelBase::clear_track_keys);
 		ClassDB::bind_method(D_METHOD("clear_all_keys"), &TimelinePanelBase::clear_all_keys);
+		ClassDB::bind_method(D_METHOD("replace_track_keys", "track_index", "key_data", "snap"), &TimelinePanelBase::replace_track_keys, DEFVAL(false));
 		ClassDB::bind_method(D_METHOD("get_key_count"), &TimelinePanelBase::get_key_count);
 		ClassDB::bind_method(D_METHOD("get_key", "track_index", "key_index"), &TimelinePanelBase::get_key);
 
@@ -61,9 +62,9 @@ namespace godot {
 		ClassDB::bind_method(D_METHOD("get_background_color"), &TimelinePanelBase::get_background_color);
 		ADD_PROPERTY(PropertyInfo(Variant::COLOR, "background_color"), "set_background_color", "get_background_color");
 
-		ClassDB::bind_method(D_METHOD("set_header_height", "header_height"), &TimelinePanelBase::set_header_height);
-		ClassDB::bind_method(D_METHOD("get_header_height"), &TimelinePanelBase::get_header_height);
-		ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "header_height"), "set_header_height", "get_header_height");
+		ClassDB::bind_method(D_METHOD("set_header_width", "header_width"), &TimelinePanelBase::set_header_width);
+		ClassDB::bind_method(D_METHOD("get_header_width"), &TimelinePanelBase::get_header_width);
+		ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "header_width"), "set_header_width", "get_header_width");
 
 		ClassDB::bind_method(D_METHOD("set_header_resize_enabled", "enabled"), &TimelinePanelBase::set_header_resize_enabled);
 		ClassDB::bind_method(D_METHOD("get_header_resize_enabled"), &TimelinePanelBase::get_header_resize_enabled);
@@ -215,9 +216,19 @@ namespace godot {
 		ClassDB::bind_method(D_METHOD("set_key_snap_enabled", "enabled"), &TimelinePanelBase::set_key_snap_enabled);
 		ClassDB::bind_method(D_METHOD("get_key_snap_enabled"), &TimelinePanelBase::get_key_snap_enabled);
 		ADD_PROPERTY(PropertyInfo(Variant::BOOL, "key_snap_enabled"), "set_key_snap_enabled", "get_key_snap_enabled");
+		ClassDB::bind_method(D_METHOD("set_key_snap_step", "step"), &TimelinePanelBase::set_key_snap_step);
+		ClassDB::bind_method(D_METHOD("get_key_snap_step"), &TimelinePanelBase::get_key_snap_step);
+		ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "key_snap_step"), "set_key_snap_step", "get_key_snap_step");
+		ClassDB::bind_method(D_METHOD("set_key_alt_duplicate_drag_enabled", "enabled"), &TimelinePanelBase::set_key_alt_duplicate_drag_enabled);
+		ClassDB::bind_method(D_METHOD("get_key_alt_duplicate_drag_enabled"), &TimelinePanelBase::get_key_alt_duplicate_drag_enabled);
+		ADD_PROPERTY(PropertyInfo(Variant::BOOL, "key_alt_duplicate_drag_enabled"), "set_key_alt_duplicate_drag_enabled", "get_key_alt_duplicate_drag_enabled");
 		ClassDB::bind_method(D_METHOD("set_clip_key_edge_edit_enabled", "enabled"), &TimelinePanelBase::set_clip_key_edge_edit_enabled);
 		ClassDB::bind_method(D_METHOD("get_clip_key_edge_edit_enabled"), &TimelinePanelBase::get_clip_key_edge_edit_enabled);
 		ADD_PROPERTY(PropertyInfo(Variant::BOOL, "clip_key_edge_edit_enabled"), "set_clip_key_edge_edit_enabled", "get_clip_key_edge_edit_enabled");
+		ClassDB::bind_method(D_METHOD("set_clip_key_edge_snap_enabled", "enabled"), &TimelinePanelBase::set_clip_key_edge_snap_enabled);
+		ClassDB::bind_method(D_METHOD("get_clip_key_edge_snap_enabled"), &TimelinePanelBase::get_clip_key_edge_snap_enabled);
+		ClassDB::bind_method(D_METHOD("is_clip_key_edge_dragging"), &TimelinePanelBase::is_clip_key_edge_dragging);
+		ADD_PROPERTY(PropertyInfo(Variant::BOOL, "clip_key_edge_snap_enabled"), "set_clip_key_edge_snap_enabled", "get_clip_key_edge_snap_enabled");
 		ClassDB::bind_method(D_METHOD("set_allow_unselected_key_edit", "enabled"), &TimelinePanelBase::set_allow_unselected_key_edit);
 		ClassDB::bind_method(D_METHOD("get_allow_unselected_key_edit"), &TimelinePanelBase::get_allow_unselected_key_edit);
 		ADD_PROPERTY(PropertyInfo(Variant::BOOL, "allow_unselected_key_edit"), "set_allow_unselected_key_edit", "get_allow_unselected_key_edit");

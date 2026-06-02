@@ -6,6 +6,7 @@
 
 #include <cstdint>
 #include <vector>
+#include <godot_cpp/classes/style_box.hpp>
 #include <godot_cpp/variant/color.hpp>
 #include <godot_cpp/variant/typed_array.hpp>
 #include <godot_cpp/variant/variant.hpp>
@@ -36,10 +37,17 @@ namespace godot {
 		int64_t next_point_id = 1;
 		CurveMode curve_mode = CURVE_BEZIER;
 		Color color = Color(1.0f, 1.0f, 1.0f, 0.65f);
-		float width = 2.0f;
+		float width = -1.0f;
 		int curve_segments = 24;
 		bool edit_enabled = true;
 		bool disabled = false;
+		Ref<StyleBox> key_normal_style;
+		Ref<StyleBox> key_selected_style;
+		Ref<StyleBox> handle_normal_style;
+		Ref<StyleBox> handle_selected_style;
+		float key_scale = -1.0f;
+		float handle_scale = -1.0f;
+		float handle_line_width = -1.0f;
 		Variant meta;
 
 		PointData* _get_point_data_by_id(int64_t p_id);
@@ -110,6 +118,30 @@ namespace godot {
 
 		void set_curve_segments(int p_segments);
 		int get_curve_segments() const;
+
+		void set_key_scale(float p_scale);
+		float get_key_scale() const;
+
+		void set_key_normal_style(Ref<StyleBox> p_style);
+		Ref<StyleBox> get_key_normal_style() const;
+
+		void set_key_selected_style(Ref<StyleBox> p_style);
+		Ref<StyleBox> get_key_selected_style() const;
+
+		void set_handle_scale(float p_scale);
+		float get_handle_scale() const;
+
+		void set_handle_normal_style(Ref<StyleBox> p_style);
+		Ref<StyleBox> get_handle_normal_style() const;
+
+		void set_handle_selected_style(Ref<StyleBox> p_style);
+		Ref<StyleBox> get_handle_selected_style() const;
+
+		void set_handle_style(Ref<StyleBox> p_style);
+		Ref<StyleBox> get_handle_style() const;
+
+		void set_handle_line_width(float p_width);
+		float get_handle_line_width() const;
 
 		void set_edit_enabled(bool p_enabled);
 		bool is_edit_enabled() const;

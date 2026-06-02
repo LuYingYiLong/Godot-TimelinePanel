@@ -3,6 +3,7 @@
 
 #include "components/timeline_connection.h"
 #include "components/timeline_indicator.h"
+#include "components/timeline_marker.h"
 
 #include <godot_cpp/classes/control.hpp>
 #include <godot_cpp/classes/h_scroll_bar.hpp>
@@ -43,6 +44,9 @@ namespace godot {
 		double current_time = 0.0;
 		CountingUnit counting_unit = TIME;
 		int fps = 24;
+		bool key_snap_enabled = false;
+		bool center_short_vertical_range = false;
+		int beat_per_bar = 4;
 		struct BPM {
 			double time = 0.0;
 			double beat = 0.0;
@@ -55,18 +59,25 @@ namespace godot {
 		};
 		Dictionary bpms;
 		Ref<TimelineIndicator> playhead;
+		TypedArray<TimelineMarker> markers;
 		bool playhead_drag_enabled = true;
 		bool playhead_dragging = false;
 		float scroll_step = 64.0f;
 		bool scroll_enabled = true;
 		bool updating_scroll = false;
 		bool middle_mouse_panning = false;
+		Vector2 middle_mouse_pan_last_position;
+		bool selecting = false;
+		bool selection_additive = false;
+		Vector2 select_start;
+		Vector2 select_end;
 		bool edit_enabled = true;
 		float handle_radius = 4.0f;
 		bool ruler_enabled = true;
 		Vector2 ruler_size = Vector2(48.0f, 22.0f);
 		float ruler_min_tick_spacing = 56.0f;
 		int ruler_font_size = 11;
+		bool highlight_zero_tick = true;
 		Color ruler_background_color = Color(0.13f, 0.13f, 0.13f, 0.92f);
 		Color ruler_tick_color = Color(1.0f, 1.0f, 1.0f, 0.42f);
 		Color ruler_text_color = Color(1.0f, 1.0f, 1.0f, 0.72f);
@@ -81,13 +92,18 @@ namespace godot {
 			Ref<StyleBox> key_normal_fallback;
 			Ref<StyleBox> key_selected;
 			Ref<StyleBox> key_selected_fallback;
-			Ref<StyleBox> handle;
-			Ref<StyleBox> handle_fallback;
+			Ref<StyleBox> handle_normal;
+			Ref<StyleBox> handle_normal_fallback;
+			Ref<StyleBox> handle_selected;
+			Ref<StyleBox> handle_selected_fallback;
+			Ref<StyleBox> selection_rect;
+			Ref<StyleBox> selection_rect_fallback;
 			float key_scale = 1.0f;
 			float handle_scale = 1.0f;
 			float handle_line_width = 1.0f;
 			Color handle_line_color = Color(1.0f, 1.0f, 1.0f, 0.44f);
 			Color handle_line_selected_color = Color(1.0f, 0.78f, 0.24f, 0.95f);
+			Color zero_tick_color = Color(1.0f, 0.78f, 0.24f, 0.95f);
 			float bezier_line_width = 2.0f;
 		} style_cache;
 
@@ -99,17 +115,18 @@ namespace godot {
 		Vector2 drag_content_offset;
 
 		Vector2 _get_content_origin() const;
+		float _get_vertical_range_center_offset(const Vector2 &p_base_origin) const;
 		Rect2 _get_content_rect() const;
 		Rect2 _get_screen_range_rect() const;
 		Rect2 _get_draw_clip_rect() const;
 		Vector2 _content_to_screen(const Vector2 &p_position) const;
-		Vector2 _content_delta_to_screen(const Vector2 &p_delta) const;
 		Vector2 _screen_to_content(const Vector2 &p_position) const;
 		std::vector<BPM> _get_sorted_bpms() const;
 		double _time_to_beat(double p_time) const;
 		double _beat_to_time(double p_beat) const;
 		double _time_to_unit(double p_time) const;
 		double _unit_to_time(double p_value) const;
+		double _snap_time(double p_time) const;
 		String _format_playhead_time(double p_time) const;
 		String _format_ruler_x_value(double p_value) const;
 		Vector2 _clamp_content_position(const Vector2 &p_position) const;
@@ -118,13 +135,19 @@ namespace godot {
 		void _draw_clipped_line(const Vector2 &p_from, const Vector2 &p_to, const Color &p_color, float p_width, const Rect2 &p_rect);
 		void _draw_clipped_circle(const Vector2 &p_position, float p_radius, const Color &p_color, const Rect2 &p_rect);
 		void _draw_clipped_style_box(const Vector2 &p_position, float p_size, const Ref<StyleBox> &p_style, const Rect2 &p_rect);
+		Rect2 _make_selection_rect(const Vector2 &p_start, const Vector2 &p_end) const;
+		bool _collect_selected_points(const Rect2 &p_rect, bool p_additive);
 		Ref<StyleBox> _get_key_normal_style() const;
 		Ref<StyleBox> _get_key_selected_style() const;
-		Ref<StyleBox> _get_handle_style() const;
+		Ref<StyleBox> _get_handle_normal_style() const;
+		Ref<StyleBox> _get_handle_selected_style() const;
+		Ref<StyleBox> _get_selection_rect_style() const;
 		float _get_smart_scroll_step(bool p_horizontal) const;
 		void _scroll(const Vector2 &p_delta);
 		void _zoom_at_position(const Vector2 &p_position, float p_factor);
 		void _pan_view(const Vector2 &p_screen_delta);
+		bool _wrap_middle_mouse_pan_position(Vector2 &r_position);
+		void _update_selection_auto_scroll(double p_delta);
 		void _update_scroll_bars();
 		void _h_scroll_changed(double p_value);
 		void _v_scroll_changed(double p_value);
@@ -132,6 +155,11 @@ namespace godot {
 		bool _is_playhead_drag_area_at_position(const Vector2 &p_position) const;
 		double _get_time_at_position(const Vector2 &p_position) const;
 		TypedArray<TimelineConnectionPoint> _get_selected_points() const;
+		Dictionary _get_point_metadata(const Ref<TimelineConnection> &p_connection, int p_point_index) const;
+		bool _is_segment_bezier(const Ref<TimelineConnection> &p_connection, int p_point_index) const;
+		bool _is_in_handle_visible(const Ref<TimelineConnection> &p_connection, int p_point_index) const;
+		bool _is_out_handle_visible(const Ref<TimelineConnection> &p_connection, int p_point_index) const;
+		bool _get_segment_samples(const Ref<TimelineConnection> &p_connection, int p_point_index, std::vector<Vector2> &r_samples) const;
 		bool _clear_point_selection();
 		void _select_point(const Ref<TimelineConnection> &p_connection, int p_point_index, bool p_additive, bool p_toggle);
 		void _emit_selection_changed();
@@ -142,7 +170,10 @@ namespace godot {
 		void _draw_ruler_guides();
 		void _draw_ruler_overlays();
 		void _draw_connections();
-		void _draw_playhead();
+		void _draw_selection_rect();
+		void _draw_playhead(bool p_draw_line);
+		void _draw_marker(const Ref<TimelineMarker>& p_marker, bool p_draw_line);
+		void _draw_indicators(bool p_draw_line);
 		void _connect_connection_changed(const Ref<TimelineConnection> &p_connection);
 		void _disconnect_connection_changed(const Ref<TimelineConnection> &p_connection);
 		void _on_resource_changed();
@@ -186,14 +217,26 @@ namespace godot {
 		void set_fps(int p_fps);
 		int get_fps() const;
 
+		void set_beat_per_bar(int p_num);
+		int get_beat_per_bar() const;
+
 		void set_bpms(const Dictionary &p_bpms);
 		Dictionary get_bpms() const;
 
 		void set_playhead(Ref<TimelineIndicator> p_playhead);
 		Ref<TimelineIndicator> get_playhead() const;
 
+		void set_markers(const TypedArray<TimelineMarker>& p_markers);
+		TypedArray<TimelineMarker> get_markers() const;
+
 		void set_playhead_drag_enabled(bool p_enabled);
 		bool is_playhead_drag_enabled() const;
+
+		void set_key_snap_enabled(bool p_enabled);
+		bool is_key_snap_enabled() const;
+
+		void set_center_short_vertical_range(bool p_enabled);
+		bool is_short_vertical_range_centered() const;
 
 		TypedArray<TimelineConnectionPoint> get_selected_points() const;
 
@@ -230,6 +273,9 @@ namespace godot {
 
 		void set_ruler_font_size(int p_size);
 		int get_ruler_font_size() const;
+
+		void set_highlight_zero_tick(bool p_enabled);
+		bool is_highlighting_zero_tick() const;
 
 		void set_ruler_background_color(const Color &p_color);
 		Color get_ruler_background_color() const;
@@ -279,6 +325,15 @@ namespace godot {
 		void set_handle_scale(float p_scale);
 		float get_handle_scale() const;
 
+		void set_handle_normal_style(Ref<StyleBox> p_style);
+		Ref<StyleBox> get_handle_normal_style() const;
+
+		void set_handle_selected_style(Ref<StyleBox> p_style);
+		Ref<StyleBox> get_handle_selected_style() const;
+
+		void set_selection_rect_style(Ref<StyleBox> p_style);
+		Ref<StyleBox> get_selection_rect_style() const;
+
 		void set_handle_style(Ref<StyleBox> p_style);
 		Ref<StyleBox> get_handle_style() const;
 
@@ -290,6 +345,9 @@ namespace godot {
 
 		void set_handle_line_selected_color(const Color &p_color);
 		Color get_handle_line_selected_color() const;
+
+		void set_zero_tick_color(const Color &p_color);
+		Color get_zero_tick_color() const;
 
 		void set_bezier_line_width(float p_width);
 		float get_bezier_line_width() const;

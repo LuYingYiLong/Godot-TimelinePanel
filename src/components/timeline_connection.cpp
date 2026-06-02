@@ -54,11 +54,46 @@ namespace godot {
 
 		ClassDB::bind_method(D_METHOD("set_width", "width"), &TimelineConnection::set_width);
 		ClassDB::bind_method(D_METHOD("get_width"), &TimelineConnection::get_width);
-		ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "width", PROPERTY_HINT_RANGE, "0,32,0.1,or_greater,suffix:px"), "set_width", "get_width");
+		ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "width", PROPERTY_HINT_RANGE, "-1,32,0.1,or_greater,suffix:px"), "set_width", "get_width");
 
 		ClassDB::bind_method(D_METHOD("set_curve_segments", "segments"), &TimelineConnection::set_curve_segments);
 		ClassDB::bind_method(D_METHOD("get_curve_segments"), &TimelineConnection::get_curve_segments);
 		ADD_PROPERTY(PropertyInfo(Variant::INT, "curve_segments", PROPERTY_HINT_RANGE, "2,128,1,or_greater"), "set_curve_segments", "get_curve_segments");
+
+		ADD_GROUP("Style Overrides", "");
+		ADD_SUBGROUP("Constants", "");
+		ClassDB::bind_method(D_METHOD("set_key_scale", "scale"), &TimelineConnection::set_key_scale);
+		ClassDB::bind_method(D_METHOD("get_key_scale"), &TimelineConnection::get_key_scale);
+		ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "key_scale", PROPERTY_HINT_RANGE, "-1,8,0.01,or_greater"), "set_key_scale", "get_key_scale");
+
+		ClassDB::bind_method(D_METHOD("set_handle_scale", "scale"), &TimelineConnection::set_handle_scale);
+		ClassDB::bind_method(D_METHOD("get_handle_scale"), &TimelineConnection::get_handle_scale);
+		ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "handle_scale", PROPERTY_HINT_RANGE, "-1,8,0.01,or_greater"), "set_handle_scale", "get_handle_scale");
+
+		ClassDB::bind_method(D_METHOD("set_handle_line_width", "width"), &TimelineConnection::set_handle_line_width);
+		ClassDB::bind_method(D_METHOD("get_handle_line_width"), &TimelineConnection::get_handle_line_width);
+		ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "handle_line_width", PROPERTY_HINT_RANGE, "-1,32,0.1,or_greater,suffix:px"), "set_handle_line_width", "get_handle_line_width");
+
+		ADD_SUBGROUP("Styles", "");
+		ClassDB::bind_method(D_METHOD("set_key_normal_style", "style"), &TimelineConnection::set_key_normal_style);
+		ClassDB::bind_method(D_METHOD("get_key_normal_style"), &TimelineConnection::get_key_normal_style);
+		ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "key_normal", PROPERTY_HINT_RESOURCE_TYPE, "StyleBox"), "set_key_normal_style", "get_key_normal_style");
+
+		ClassDB::bind_method(D_METHOD("set_key_selected_style", "style"), &TimelineConnection::set_key_selected_style);
+		ClassDB::bind_method(D_METHOD("get_key_selected_style"), &TimelineConnection::get_key_selected_style);
+		ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "key_selected", PROPERTY_HINT_RESOURCE_TYPE, "StyleBox"), "set_key_selected_style", "get_key_selected_style");
+
+		ClassDB::bind_method(D_METHOD("set_handle_normal_style", "style"), &TimelineConnection::set_handle_normal_style);
+		ClassDB::bind_method(D_METHOD("get_handle_normal_style"), &TimelineConnection::get_handle_normal_style);
+		ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "handle_normal", PROPERTY_HINT_RESOURCE_TYPE, "StyleBox"), "set_handle_normal_style", "get_handle_normal_style");
+
+		ClassDB::bind_method(D_METHOD("set_handle_selected_style", "style"), &TimelineConnection::set_handle_selected_style);
+		ClassDB::bind_method(D_METHOD("get_handle_selected_style"), &TimelineConnection::get_handle_selected_style);
+		ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "handle_selected", PROPERTY_HINT_RESOURCE_TYPE, "StyleBox"), "set_handle_selected_style", "get_handle_selected_style");
+
+		ClassDB::bind_method(D_METHOD("set_handle_style", "style"), &TimelineConnection::set_handle_style);
+		ClassDB::bind_method(D_METHOD("get_handle_style"), &TimelineConnection::get_handle_style);
+		ADD_GROUP("", "");
 
 		ClassDB::bind_method(D_METHOD("set_edit_enabled", "enabled"), &TimelineConnection::set_edit_enabled);
 		ClassDB::bind_method(D_METHOD("is_edit_enabled"), &TimelineConnection::is_edit_enabled);
@@ -446,7 +481,7 @@ namespace godot {
 	}
 
 	void TimelineConnection::set_width(float p_width) {
-		width = p_width;
+		width = MAX(p_width, -1.0f);
 		emit_changed();
 	}
 
@@ -461,6 +496,77 @@ namespace godot {
 
 	int TimelineConnection::get_curve_segments() const {
 		return curve_segments;
+	}
+
+	void TimelineConnection::set_key_scale(float p_scale) {
+		key_scale = MAX(p_scale, -1.0f);
+		emit_changed();
+	}
+
+	float TimelineConnection::get_key_scale() const {
+		return key_scale;
+	}
+
+	void TimelineConnection::set_key_normal_style(Ref<StyleBox> p_style) {
+		key_normal_style = p_style;
+		emit_changed();
+	}
+
+	Ref<StyleBox> TimelineConnection::get_key_normal_style() const {
+		return key_normal_style;
+	}
+
+	void TimelineConnection::set_key_selected_style(Ref<StyleBox> p_style) {
+		key_selected_style = p_style;
+		emit_changed();
+	}
+
+	Ref<StyleBox> TimelineConnection::get_key_selected_style() const {
+		return key_selected_style;
+	}
+
+	void TimelineConnection::set_handle_scale(float p_scale) {
+		handle_scale = MAX(p_scale, -1.0f);
+		emit_changed();
+	}
+
+	float TimelineConnection::get_handle_scale() const {
+		return handle_scale;
+	}
+
+	void TimelineConnection::set_handle_normal_style(Ref<StyleBox> p_style) {
+		handle_normal_style = p_style;
+		emit_changed();
+	}
+
+	Ref<StyleBox> TimelineConnection::get_handle_normal_style() const {
+		return handle_normal_style;
+	}
+
+	void TimelineConnection::set_handle_selected_style(Ref<StyleBox> p_style) {
+		handle_selected_style = p_style;
+		emit_changed();
+	}
+
+	Ref<StyleBox> TimelineConnection::get_handle_selected_style() const {
+		return handle_selected_style;
+	}
+
+	void TimelineConnection::set_handle_style(Ref<StyleBox> p_style) {
+		set_handle_normal_style(p_style);
+	}
+
+	Ref<StyleBox> TimelineConnection::get_handle_style() const {
+		return get_handle_normal_style();
+	}
+
+	void TimelineConnection::set_handle_line_width(float p_width) {
+		handle_line_width = MAX(p_width, -1.0f);
+		emit_changed();
+	}
+
+	float TimelineConnection::get_handle_line_width() const {
+		return handle_line_width;
 	}
 
 	void TimelineConnection::set_edit_enabled(bool p_enabled) {

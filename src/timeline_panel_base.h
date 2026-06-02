@@ -9,6 +9,7 @@
 #include <godot_cpp/classes/v_scroll_bar.hpp>
 #include <godot_cpp/core/binder_common.hpp>
 #include <godot_cpp/core/gdvirtual.gen.inc>
+#include <godot_cpp/variant/array.hpp>
 #include <cstdint>
 #include <unordered_set>
 #include <vector>
@@ -76,6 +77,7 @@ namespace godot {
 			HEADER_RESIZE_TARGET_NONE,
 			HEADER_RESIZE_TARGET_TIME_RULER,
 			HEADER_RESIZE_TARGET_TRACK,
+			HEADER_RESIZE_TARGET_HEADER_WIDTH,
 		};
 
 		Color background_color;
@@ -166,7 +168,10 @@ namespace godot {
 		bool key_drag_moved = false;
 		bool allow_key_cross_track_move = true;
 		bool key_snap_enabled = true;
+		double key_snap_step = 0.0;
+		bool key_alt_duplicate_drag_enabled = false;
 		bool clip_key_edge_edit_enabled = true;
+		bool clip_key_edge_snap_enabled = false;
 		bool allow_unselected_key_edit = true;
 		bool allow_right_mouse_selection = false;
 		bool header_resizing = false;
@@ -190,6 +195,7 @@ namespace godot {
 		ClipKeyEditEdge clip_key_edge_drag_edge = CLIP_KEY_EDIT_EDGE_NONE;
 		double clip_key_edge_drag_head_time = 0.0;
 		double clip_key_edge_drag_tail_time = 0.0;
+		bool key_drag_duplicating = false;
 
 		struct DraggedKey {
 			TimelineTrackKey* key = nullptr;
@@ -228,6 +234,7 @@ namespace godot {
 		int _get_track_header_index_at_x(float p_x) const;
 		void _select_track_keys(int p_track_index);
 		void _update_selection_auto_scroll(double p_delta);
+		void _update_key_drag_auto_scroll(double p_delta);
 		void _stop_internal_process_if_idle();
 		double _position_to_key_value(double p_y) const;
 		double _get_playhead_drag_time(double p_y) const;
@@ -241,9 +248,11 @@ namespace godot {
 		void _begin_clip_key_edge_drag(TimelineTrackKey *p_key, ClipKeyEditEdge p_edge);
 		void _update_clip_key_edge_drag(const Vector2 &p_position);
 		void _finish_clip_key_edge_drag();
-		void _begin_key_drag(int p_track_index, TimelineTrackKey* p_key, const Vector2& p_position);
+		void _begin_key_drag(int p_track_index, TimelineTrackKey* p_key, const Vector2& p_position, bool p_duplicate = false);
 		void _update_key_drag(const Vector2& p_position);
 		void _finish_key_drag();
+		TimelineTrackKey *_duplicate_key_for_drag(TimelineTrackKey *p_key, int p_track_index);
+		void _remove_drag_duplicate_keys(const std::vector<TimelineTrackKey *> &p_keys);
 		void _move_key_to_track(TimelineTrackKey* p_key, int p_from_track, int p_to_track);
 		bool _can_move_key_to_track(const TimelineTrackKey* p_key, int p_track_index) const;
 		double _snap_key_time(double p_time) const;
@@ -263,8 +272,8 @@ namespace godot {
 		void _finish_middle_mouse_pan(const Vector2 &p_position);
 		bool _wrap_middle_mouse_pan_position(Vector2 &r_position);
 
-		void _draw_header(const Point2& pos, const float width, Ref<StyleBox> header_bg, Ref<Texture2D> header_icon);
-		void _draw_header_rect(const Rect2 &p_rect, Ref<StyleBox> p_header_bg, Ref<Texture2D> p_header_icon);
+		void _draw_header(const Point2 &pos, const float width, Ref<StyleBox> header_bg, Ref<Texture2D> header_icon, const String &p_text = String(), float p_indent = 0.0f);
+		void _draw_header_rect(const Rect2 &p_rect, Ref<StyleBox> p_header_bg, Ref<Texture2D> p_header_icon, const String &p_text = String(), float p_indent = 0.0f);
 		void _draw_horizontal_panel();
 		void _draw_horizontal_grid();
 		void _draw_horizontal_time_ruler_ticks();
@@ -377,6 +386,7 @@ namespace godot {
 		void remove_key(int p_track_index, int p_key_index);
 		void clear_track_keys(int p_track_index);
 		void clear_all_keys();
+		TypedArray<TimelineTrackKey> replace_track_keys(int p_track_index, const Array& p_key_data, bool p_snap = false);
 		int get_key_count(int p_track_index) const;
 		TimelineTrackKey* get_key(int p_track_index, int p_key_index) const;
 		TypedArray<TimelineTrackKey> find_keys(int p_track_index, double p_start_time, double p_end_time) const;
@@ -400,8 +410,8 @@ namespace godot {
 		void set_separator_width(const float p_width);
 		float get_separator_width() const;
 
-		void set_header_height(const float p_height);
-		float get_header_height() const;
+		void set_header_width(const float p_width);
+		float get_header_width() const;
 
 		void set_header_resize_enabled(bool p_enabled);
 		bool get_header_resize_enabled() const;
@@ -526,8 +536,18 @@ namespace godot {
 		void set_key_snap_enabled(bool p_enabled);
 		bool get_key_snap_enabled() const;
 
+		void set_key_snap_step(double p_step);
+		double get_key_snap_step() const;
+
+		void set_key_alt_duplicate_drag_enabled(bool p_enabled);
+		bool get_key_alt_duplicate_drag_enabled() const;
+
 		void set_clip_key_edge_edit_enabled(bool p_enabled);
 		bool get_clip_key_edge_edit_enabled() const;
+
+		void set_clip_key_edge_snap_enabled(bool p_enabled);
+		bool get_clip_key_edge_snap_enabled() const;
+		bool is_clip_key_edge_dragging() const;
 
 		void set_allow_unselected_key_edit(bool p_enabled);
 		bool get_allow_unselected_key_edit() const;

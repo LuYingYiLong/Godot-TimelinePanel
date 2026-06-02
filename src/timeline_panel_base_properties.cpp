@@ -36,7 +36,7 @@ namespace godot {
 
 		for (int i = 0; i < tracks.size(); i++) {
 			Ref<TimelineTrack> track = tracks[i];
-			const float track_span = panel_orientation == PANEL_ORIENTATION_HORIZONTAL ? _get_horizontal_track_height() : (track.is_valid() ? track->get_width() : 0.0f);
+			const float track_span = track.is_valid() ? track->get_width() : (panel_orientation == PANEL_ORIENTATION_HORIZONTAL ? _get_horizontal_track_height() : 0.0f);
 			if (track.is_null()) {
 				// 保持索引对齐，放入空槽
 				CachedTrack ct;
@@ -71,7 +71,7 @@ namespace godot {
 			CachedTrack &ct = _track_cache[i];
 			Ref<TimelineTrack> track = tracks[i];
 			ct.x_offset = current_x;
-			ct.width = panel_orientation == PANEL_ORIENTATION_HORIZONTAL ? _get_horizontal_track_height() : (track.is_valid() ? track->get_width() : 0.0f);
+			ct.width = track.is_valid() ? track->get_width() : (panel_orientation == PANEL_ORIENTATION_HORIZONTAL ? _get_horizontal_track_height() : 0.0f);
 			current_x += ct.width;
 		}
 	}
@@ -116,14 +116,14 @@ namespace godot {
 	}
 
 
-	void TimelinePanelBase::set_header_height(const float p_height) {
-		header_height = p_height;
+	void TimelinePanelBase::set_header_width(const float p_width) {
+		header_height = p_width;
 		queue_redraw();
 		update_minimum_size();
 	}
 
 
-	float TimelinePanelBase::get_header_height() const {
+	float TimelinePanelBase::get_header_width() const {
 		return header_height;
 	}
 
@@ -449,6 +449,26 @@ namespace godot {
 	}
 
 
+	void TimelinePanelBase::set_key_snap_step(double p_step) {
+		key_snap_step = p_step < 0.0 ? 0.0 : p_step;
+	}
+
+
+	double TimelinePanelBase::get_key_snap_step() const {
+		return key_snap_step;
+	}
+
+
+	void TimelinePanelBase::set_key_alt_duplicate_drag_enabled(bool p_enabled) {
+		key_alt_duplicate_drag_enabled = p_enabled;
+	}
+
+
+	bool TimelinePanelBase::get_key_alt_duplicate_drag_enabled() const {
+		return key_alt_duplicate_drag_enabled;
+	}
+
+
 	void TimelinePanelBase::set_clip_key_edge_edit_enabled(bool p_enabled) {
 		clip_key_edge_edit_enabled = p_enabled;
 		if (!clip_key_edge_edit_enabled && !clip_key_edge_dragging) {
@@ -459,6 +479,21 @@ namespace godot {
 
 	bool TimelinePanelBase::get_clip_key_edge_edit_enabled() const {
 		return clip_key_edge_edit_enabled;
+	}
+
+
+	void TimelinePanelBase::set_clip_key_edge_snap_enabled(bool p_enabled) {
+		clip_key_edge_snap_enabled = p_enabled;
+	}
+
+
+	bool TimelinePanelBase::get_clip_key_edge_snap_enabled() const {
+		return clip_key_edge_snap_enabled;
+	}
+
+
+	bool TimelinePanelBase::is_clip_key_edge_dragging() const {
+		return clip_key_edge_dragging;
 	}
 
 

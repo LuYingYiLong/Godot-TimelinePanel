@@ -35,13 +35,13 @@ namespace godot {
 			const int start_row = static_cast<int>(Math::floor(start_beat * divisions));
 			const int end_row = static_cast<int>(Math::ceil(end_beat * divisions));
 			for (int row = start_row; row <= end_row; row++) {
-				const bool is_bar_line = (row % divisions) == 0;
+				const bool is_beat_line = (row % divisions) == 0;
 				const double beat = static_cast<double>(row) / divisions;
 				const float x = static_cast<float>(_beat_to_y(beat));
 				if (x < visible_left || x > visible_right) {
 					continue;
 				}
-				draw_line(Point2(x, top), Point2(x, bottom), is_bar_line ? bar_line_color : beat_line_color, is_bar_line ? bar_line_width : beat_line_width);
+				draw_line(Point2(x, top), Point2(x, bottom), is_beat_line ? beat_line_color : bar_line_color, is_beat_line ? beat_line_width : bar_line_width);
 			}
 		} break;
 		case FRAME: {
@@ -162,7 +162,38 @@ namespace godot {
 		const float indicator_line_bottom = MIN(visible_bottom, MAX(ruler_height, tracks_bottom));
 		const float indicator_line_length = MAX(indicator_line_bottom - ruler_height * 0.5f, 0.0f);
 
+		for (int64_t i = 0; i < tracks.size() && i < static_cast<int64_t>(_track_cache.size()); i++) {
+			Ref<TimelineTrack> track = tracks[i];
+			if (track.is_null()) continue;
+
+			const Color track_background = track->get_background();
+			if (track_background.a <= 0.0f) continue;
+
+			const CachedTrack &ct = _track_cache[i];
+			if (ct.width <= 0.0f) continue;
+
+			const float y = ruler_height + ct.x_offset - vscroll_value;
+			if (y + ct.width < ruler_height || y > get_size().y) continue;
+
+			draw_rect(Rect2(Vector2(header_left, y), Vector2(MAX(get_size().x - header_left, 0.0f), ct.width)), track_background);
+		}
+
 		_draw_horizontal_grid();
+
+		for (int64_t i = 0; i < tracks.size() && i < static_cast<int64_t>(_track_cache.size()); i++) {
+			Ref<TimelineTrack> track = tracks[i];
+			if (track.is_null() || !track->get_header_background_fill_track()) continue;
+
+			const CachedTrack &ct = _track_cache[i];
+			if (ct.width <= 0.0f) continue;
+			const float y = ruler_height + ct.x_offset - vscroll_value;
+			if (y + ct.width < ruler_height || y > get_size().y) continue;
+
+			Ref<StyleBox> header_background = track->get_header_background();
+			if (header_background.is_valid()) {
+				draw_style_box(header_background, Rect2(Vector2(0.0f, y), Vector2(get_size().x, ct.width)));
+			}
+		}
 
 		for (const CachedTrack &ct : _track_cache) {
 			if (ct.width <= 0.0f) continue;
@@ -230,30 +261,8 @@ namespace godot {
 			}
 		}
 
+		TypedArray<TimelineIndicator> all_indicators;
 		if (time_ruler.is_valid()) {
-			Ref<StyleBox> ruler_bg = time_ruler->get_header_background();
-			Ref<Texture2D> ruler_icon = time_ruler->get_header_icon();
-			_draw_header_rect(Rect2(Vector2(0.0f, 0.0f), Vector2(header_left, ruler_height)), ruler_bg, ruler_icon);
-			if (ruler_bg.is_valid()) {
-				draw_style_box(ruler_bg, Rect2(Vector2(header_left, 0.0f), Vector2(MAX(get_size().x - header_left, 0.0f), ruler_height)));
-			}
-		}
-		_draw_horizontal_time_ruler_ticks();
-
-		for (int64_t i = 0; i < tracks.size() && i < static_cast<int64_t>(_track_cache.size()); i++) {
-			Ref<TimelineTrack> track = tracks[i];
-			if (track.is_null()) continue;
-
-			const CachedTrack &ct = _track_cache[i];
-			if (ct.width <= 0.0f) continue;
-			const float y = ruler_height + ct.x_offset - vscroll_value;
-			if (y + ct.width < ruler_height || y > get_size().y) continue;
-
-			_draw_header_rect(Rect2(Vector2(0.0f, y), Vector2(track->get_width(), ct.width)), track->get_header_background(), track->get_header_icon());
-		}
-
-		if (time_ruler.is_valid()) {
-			TypedArray<TimelineIndicator> all_indicators;
 			for (int i = 0; i < markers.size(); i++) {
 				Ref<TimelineIndicator> indicator = markers[i];
 				if (indicator.is_valid()) {
@@ -274,6 +283,42 @@ namespace godot {
 				const float x = static_cast<float>(_time_to_y(time));
 				Rect2 header_rect(Vector2(x - 24.0f, 0.0f), Vector2(48.0f, ruler_height));
 				indicator->draw(get_canvas_item(), header_rect, _format_indicator_time(time), indicator_line_length, true);
+			}
+		}
+
+		for (int64_t i = 0; i < tracks.size() && i < static_cast<int64_t>(_track_cache.size()); i++) {
+			Ref<TimelineTrack> track = tracks[i];
+			if (track.is_null()) continue;
+
+			const CachedTrack &ct = _track_cache[i];
+			if (ct.width <= 0.0f) continue;
+			const float y = ruler_height + ct.x_offset - vscroll_value;
+			if (y + ct.width < ruler_height || y > get_size().y) continue;
+
+			_draw_header_rect(Rect2(Vector2(0.0f, y), Vector2(_get_horizontal_track_header_width(), ct.width)), track->get_header_background(), track->get_header_icon(), track->get_text(), track->get_header_indent());
+		}
+
+		if (time_ruler.is_valid()) {
+			Ref<StyleBox> ruler_bg = time_ruler->get_header_background();
+			Ref<Texture2D> ruler_icon = time_ruler->get_header_icon();
+			_draw_header_rect(Rect2(Vector2(0.0f, 0.0f), Vector2(header_left, ruler_height)), ruler_bg, ruler_icon);
+			if (ruler_bg.is_valid()) {
+				draw_style_box(ruler_bg, Rect2(Vector2(header_left, 0.0f), Vector2(MAX(get_size().x - header_left, 0.0f), ruler_height)));
+			}
+		}
+		_draw_horizontal_time_ruler_ticks();
+
+		if (time_ruler.is_valid()) {
+			for (int i = 0; i < all_indicators.size(); i++) {
+				Ref<TimelineIndicator> indicator = all_indicators[i];
+				double time = current_time;
+				Ref<TimelineMarker> marker = indicator;
+				if (marker.is_valid()) {
+					time = marker->get_time();
+				}
+				const float x = static_cast<float>(_time_to_y(time));
+				Rect2 header_rect(Vector2(x - 24.0f, 0.0f), Vector2(48.0f, ruler_height));
+				indicator->draw(get_canvas_item(), header_rect, _format_indicator_time(time), 0.0, true);
 			}
 		}
 

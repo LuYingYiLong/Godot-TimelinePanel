@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <unordered_set>
+#include <godot_cpp/classes/input.hpp>
 #include <godot_cpp/classes/font.hpp>
 #include <godot_cpp/classes/input_event_mouse_button.hpp>
 #include <godot_cpp/classes/input_event_mouse_motion.hpp>
@@ -24,7 +25,7 @@ namespace godot {
 		switch (p_what) {
 		case NOTIFICATION_MOUSE_EXIT:
 		case NOTIFICATION_MOUSE_EXIT_SELF: {
-			if (!header_resizing && !middle_mouse_panning && !clip_key_edge_dragging) {
+			if (!header_resizing && !middle_mouse_panning && !clip_key_edge_dragging && !key_dragging) {
 				set_default_cursor_shape(Control::CURSOR_ARROW);
 			}
 		} break;
@@ -35,6 +36,14 @@ namespace godot {
 
 		case NOTIFICATION_INTERNAL_PROCESS: {
 			const double delta = get_process_delta_time();
+			if (!Input::get_singleton()->is_mouse_button_pressed(MouseButton::MOUSE_BUTTON_LEFT)) {
+				if (key_dragging) {
+					_finish_key_drag();
+				}
+				if (clip_key_edge_dragging) {
+					_finish_clip_key_edge_drag();
+				}
+			}
 			if (select_pending) {
 				select_timer += delta;
 				if (select_timer >= long_press_time && !beyond_deadzone) {
@@ -47,6 +56,7 @@ namespace godot {
 				}
 			}
 			_update_selection_auto_scroll(delta);
+			_update_key_drag_auto_scroll(delta);
 			_stop_internal_process_if_idle();
 		} break;
 
@@ -65,6 +75,22 @@ namespace godot {
 
 			// 计算内容高度并更新滚动条
 			_update_content_height();
+
+			for (int64_t i = 0; i < tracks.size() && i < static_cast<int64_t>(_track_cache.size()); i++) {
+				Ref<TimelineTrack> track = tracks[i];
+				if (track.is_null()) continue;
+
+				const Color track_background = track->get_background();
+				if (track_background.a <= 0.0f) continue;
+
+				const CachedTrack &ct = _track_cache[i];
+				if (ct.width <= 0.0f) continue;
+
+				const float x = ct.x_offset - hscroll_value;
+				if (x + ct.width < 0.0f || x > get_size().x) continue;
+
+				draw_rect(Rect2(Vector2(x, header_height), Vector2(ct.width, MAX(get_size().y - header_height, 0.0f))), track_background);
+			}
 
 			// 绘制网格
 			switch (counting_unit) {
@@ -356,7 +382,7 @@ namespace godot {
 
 				Ref<StyleBox> header_background = track->get_header_background();
 				Ref<Texture2D> header_icon = track->get_header_icon();
-				_draw_header(Point2(x, 0.0f), ct.width, header_background, header_icon);
+				_draw_header(Point2(x, 0.0f), ct.width, header_background, header_icon, track->get_text(), track->get_header_indent());
 			}
 
 			draw_line(Point2(header_width - hscroll_value, header_height), Point2(header_width - hscroll_value, get_size().y), separator_color, separator_width);
@@ -366,42 +392,48 @@ namespace godot {
 	}
 
 
-	void TimelinePanelBase::_draw_header(const Point2& pos, const float width, Ref<StyleBox> header_bg, Ref<Texture2D> header_icon) {
-		if (header_bg.is_valid()) {
-			draw_style_box(header_bg, Rect2(pos, Size2(width, header_height)));
-		}
-
-		if (header_icon.is_valid()) {
-			Size2 tex_size = header_icon->get_size();
-
-			// 计算缩放比例，选择较小的那个以保持比例并限制在区域内
-			Size2 scale_size(width / tex_size.width, header_height / tex_size.height);
-			float scale = scale_size.width < scale_size.height ? scale_size.width : scale_size.height;
-			Size2 scaled_tex_size = tex_size * scale;
-
-			// 计算居中偏移
-			Point2 offset = (Size2(width, header_height) - scaled_tex_size) / 2;
-			draw_texture_rect(header_icon, Rect2(pos + offset, scaled_tex_size), false);
-		}
+	void TimelinePanelBase::_draw_header(const Point2 &pos, const float width, Ref<StyleBox> header_bg, Ref<Texture2D> header_icon, const String &p_text, float p_indent) {
+		_draw_header_rect(Rect2(pos, Size2(width, header_height)), header_bg, header_icon, p_text, p_indent);
 	}
 
 
-	void TimelinePanelBase::_draw_header_rect(const Rect2 &p_rect, Ref<StyleBox> p_header_bg, Ref<Texture2D> p_header_icon) {
+	void TimelinePanelBase::_draw_header_rect(const Rect2 &p_rect, Ref<StyleBox> p_header_bg, Ref<Texture2D> p_header_icon, const String &p_text, float p_indent) {
 		if (p_header_bg.is_valid()) {
 			draw_style_box(p_header_bg, p_rect);
 		}
 
-		if (p_header_icon.is_valid() && p_rect.size.x > 0.0f && p_rect.size.y > 0.0f) {
+		const bool has_text = !p_text.is_empty();
+		const float padding = has_text ? 4.0f : 0.0f;
+		const float indent = has_text ? MAX(p_indent, 0.0f) : 0.0f;
+		const float content_left = p_rect.position.x + indent;
+		const float max_icon_width = MAX(p_rect.position.x + p_rect.size.x - content_left - padding * 2.0f, 0.0f);
+		const float max_icon_height = MAX(p_rect.size.y, 0.0f);
+		float text_left = content_left + padding;
+		if (p_header_icon.is_valid() && max_icon_width > 0.0f && max_icon_height > 0.0f) {
 			Size2 tex_size = p_header_icon->get_size();
-			if (tex_size.x <= 0.0f || tex_size.y <= 0.0f) {
-				return;
+			if (tex_size.x > 0.0f && tex_size.y > 0.0f) {
+				const float max_icon_size = has_text ? MIN(MIN(max_icon_width, max_icon_height), 18.0f) : MIN(max_icon_width, max_icon_height);
+				if (max_icon_size > 0.0f) {
+					const float scale = MIN(max_icon_size / tex_size.x, max_icon_size / tex_size.y);
+					const Size2 scaled_tex_size = tex_size * scale;
+					const float icon_x = has_text ? content_left + padding : p_rect.position.x + (p_rect.size.x - scaled_tex_size.x) * 0.5f;
+					const float icon_y = p_rect.position.y + (p_rect.size.y - scaled_tex_size.y) * 0.5f;
+					draw_texture_rect(p_header_icon, Rect2(Point2(icon_x, icon_y), scaled_tex_size), false);
+					text_left = icon_x + scaled_tex_size.x + padding;
+				}
 			}
+		}
 
-			Size2 scale_size(p_rect.size.x / tex_size.x, p_rect.size.y / tex_size.y);
-			float scale = MIN(scale_size.x, scale_size.y);
-			Size2 scaled_tex_size = tex_size * scale;
-			Point2 offset = (p_rect.size - scaled_tex_size) / 2.0f;
-			draw_texture_rect(p_header_icon, Rect2(p_rect.position + offset, scaled_tex_size), false);
+		if (has_text) {
+			const Ref<Font> font = ThemeDB::get_singleton()->get_fallback_font();
+			if (font.is_valid()) {
+				const int font_size = 12;
+				const float text_width = MAX(p_rect.position.x + p_rect.size.x - padding - text_left, 0.0f);
+				const float baseline = p_rect.position.y + (p_rect.size.y - static_cast<float>(font_size)) * 0.5f + static_cast<float>(font_size);
+				if (text_width > 0.0f) {
+					draw_string(font, Point2(text_left, baseline), p_text, HORIZONTAL_ALIGNMENT_LEFT, text_width, font_size, Color(1.0f, 1.0f, 1.0f, 0.88f));
+				}
+			}
 		}
 	}
 

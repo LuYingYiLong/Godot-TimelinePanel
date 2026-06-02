@@ -99,11 +99,23 @@ namespace godot {
 		ClassDB::bind_method(D_METHOD("set_playhead", "playhead"), &TimelineConnectionEditor::set_playhead);
 		ClassDB::bind_method(D_METHOD("get_playhead"), &TimelineConnectionEditor::get_playhead);
 		ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "component_playhead", PROPERTY_HINT_RESOURCE_TYPE, "TimelineIndicator"), "set_playhead", "get_playhead");
+
+		ClassDB::bind_method(D_METHOD("set_markers", "markers"), &TimelineConnectionEditor::set_markers);
+		ClassDB::bind_method(D_METHOD("get_markers"), &TimelineConnectionEditor::get_markers);
+		ADD_PROPERTY(PropertyInfo(Variant::ARRAY, "component_markers", PROPERTY_HINT_ARRAY_TYPE, "TimelineMarker"), "set_markers", "get_markers");
 		ADD_GROUP("", "");
 
 		ClassDB::bind_method(D_METHOD("set_playhead_drag_enabled", "enabled"), &TimelineConnectionEditor::set_playhead_drag_enabled);
 		ClassDB::bind_method(D_METHOD("is_playhead_drag_enabled"), &TimelineConnectionEditor::is_playhead_drag_enabled);
 		ADD_PROPERTY(PropertyInfo(Variant::BOOL, "playhead_drag_enabled"), "set_playhead_drag_enabled", "is_playhead_drag_enabled");
+
+		ClassDB::bind_method(D_METHOD("set_key_snap_enabled", "enabled"), &TimelineConnectionEditor::set_key_snap_enabled);
+		ClassDB::bind_method(D_METHOD("is_key_snap_enabled"), &TimelineConnectionEditor::is_key_snap_enabled);
+		ADD_PROPERTY(PropertyInfo(Variant::BOOL, "key_snap_enabled"), "set_key_snap_enabled", "is_key_snap_enabled");
+
+		ClassDB::bind_method(D_METHOD("set_center_short_vertical_range", "enabled"), &TimelineConnectionEditor::set_center_short_vertical_range);
+		ClassDB::bind_method(D_METHOD("is_short_vertical_range_centered"), &TimelineConnectionEditor::is_short_vertical_range_centered);
+		ADD_PROPERTY(PropertyInfo(Variant::BOOL, "center_short_vertical_range"), "set_center_short_vertical_range", "is_short_vertical_range_centered");
 
 		ClassDB::bind_method(D_METHOD("get_time_from_position", "position"), &TimelineConnectionEditor::get_time_from_position);
 		ClassDB::bind_method(D_METHOD("get_frame_from_position", "position"), &TimelineConnectionEditor::get_frame_from_position);
@@ -119,6 +131,10 @@ namespace godot {
 		ADD_GROUP("", "");
 
 		ADD_GROUP("Beat", "");
+		ClassDB::bind_method(D_METHOD("set_beat_per_bar", "num"), &TimelineConnectionEditor::set_beat_per_bar);
+		ClassDB::bind_method(D_METHOD("get_beat_per_bar"), &TimelineConnectionEditor::get_beat_per_bar);
+		ADD_PROPERTY(PropertyInfo(Variant::INT, "beat_per_bar", PROPERTY_HINT_RANGE, "1,256,1,or_greater"), "set_beat_per_bar", "get_beat_per_bar");
+
 		ClassDB::bind_method(D_METHOD("set_bpms", "bpms"), &TimelineConnectionEditor::set_bpms);
 		ClassDB::bind_method(D_METHOD("get_bpms"), &TimelineConnectionEditor::get_bpms);
 		ADD_PROPERTY(PropertyInfo(Variant::DICTIONARY, "bpms", PROPERTY_HINT_DICTIONARY_TYPE, "float;int"), "set_bpms", "get_bpms");
@@ -189,6 +205,10 @@ namespace godot {
 		ClassDB::bind_method(D_METHOD("get_ruler_font_size"), &TimelineConnectionEditor::get_ruler_font_size);
 		ADD_PROPERTY(PropertyInfo(Variant::INT, "ruler_font_size", PROPERTY_HINT_RANGE, "6,48,1,or_greater,suffix:px"), "set_ruler_font_size", "get_ruler_font_size");
 
+		ClassDB::bind_method(D_METHOD("set_highlight_zero_tick", "enabled"), &TimelineConnectionEditor::set_highlight_zero_tick);
+		ClassDB::bind_method(D_METHOD("is_highlighting_zero_tick"), &TimelineConnectionEditor::is_highlighting_zero_tick);
+		ADD_PROPERTY(PropertyInfo(Variant::BOOL, "ruler_highlight_zero_tick"), "set_highlight_zero_tick", "is_highlighting_zero_tick");
+
 		ClassDB::bind_method(D_METHOD("set_ruler_background_color", "color"), &TimelineConnectionEditor::set_ruler_background_color);
 		ClassDB::bind_method(D_METHOD("get_ruler_background_color"), &TimelineConnectionEditor::get_ruler_background_color);
 		ADD_PROPERTY(PropertyInfo(Variant::COLOR, "ruler_background_color"), "set_ruler_background_color", "get_ruler_background_color");
@@ -236,6 +256,10 @@ namespace godot {
 		ClassDB::bind_method(D_METHOD("get_handle_line_selected_color"), &TimelineConnectionEditor::get_handle_line_selected_color);
 		ADD_PROPERTY(PropertyInfo(Variant::COLOR, "handle_line_selected_color"), "set_handle_line_selected_color", "get_handle_line_selected_color");
 
+		ClassDB::bind_method(D_METHOD("set_zero_tick_color", "color"), &TimelineConnectionEditor::set_zero_tick_color);
+		ClassDB::bind_method(D_METHOD("get_zero_tick_color"), &TimelineConnectionEditor::get_zero_tick_color);
+		ADD_PROPERTY(PropertyInfo(Variant::COLOR, "zero_tick_color"), "set_zero_tick_color", "get_zero_tick_color");
+
 		ADD_SUBGROUP("Styles", "");
 		ClassDB::bind_method(D_METHOD("set_key_normal_style", "style"), &TimelineConnectionEditor::set_key_normal_style);
 		ClassDB::bind_method(D_METHOD("get_key_normal_style"), &TimelineConnectionEditor::get_key_normal_style);
@@ -245,9 +269,20 @@ namespace godot {
 		ClassDB::bind_method(D_METHOD("get_key_selected_style"), &TimelineConnectionEditor::get_key_selected_style);
 		ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "key_selected", PROPERTY_HINT_RESOURCE_TYPE, "StyleBox"), "set_key_selected_style", "get_key_selected_style");
 
+		ClassDB::bind_method(D_METHOD("set_handle_normal_style", "style"), &TimelineConnectionEditor::set_handle_normal_style);
+		ClassDB::bind_method(D_METHOD("get_handle_normal_style"), &TimelineConnectionEditor::get_handle_normal_style);
+		ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "handle_normal", PROPERTY_HINT_RESOURCE_TYPE, "StyleBox"), "set_handle_normal_style", "get_handle_normal_style");
+
+		ClassDB::bind_method(D_METHOD("set_handle_selected_style", "style"), &TimelineConnectionEditor::set_handle_selected_style);
+		ClassDB::bind_method(D_METHOD("get_handle_selected_style"), &TimelineConnectionEditor::get_handle_selected_style);
+		ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "handle_selected", PROPERTY_HINT_RESOURCE_TYPE, "StyleBox"), "set_handle_selected_style", "get_handle_selected_style");
+
+		ClassDB::bind_method(D_METHOD("set_selection_rect_style", "style"), &TimelineConnectionEditor::set_selection_rect_style);
+		ClassDB::bind_method(D_METHOD("get_selection_rect_style"), &TimelineConnectionEditor::get_selection_rect_style);
+		ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "selection_rect", PROPERTY_HINT_RESOURCE_TYPE, "StyleBox"), "set_selection_rect_style", "get_selection_rect_style");
+
 		ClassDB::bind_method(D_METHOD("set_handle_style", "style"), &TimelineConnectionEditor::set_handle_style);
 		ClassDB::bind_method(D_METHOD("get_handle_style"), &TimelineConnectionEditor::get_handle_style);
-		ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "handle", PROPERTY_HINT_RESOURCE_TYPE, "StyleBox"), "set_handle_style", "get_handle_style");
 		ADD_GROUP("", "");
 
 		GDVIRTUAL_BIND(_draw_connection, "to_canvas_item", "connection", "from_position", "to_position");
@@ -302,24 +337,58 @@ namespace godot {
 
 	void TimelineConnectionEditor::_notification(int p_what) {
 		switch (p_what) {
+		case NOTIFICATION_INTERNAL_PROCESS:
+			_update_selection_auto_scroll(get_process_delta_time());
+			if (!selecting) {
+				set_process_internal(false);
+			}
+			break;
 		case NOTIFICATION_RESIZED:
 			_update_scroll_bars();
 			queue_redraw();
 			break;
 		case NOTIFICATION_DRAW:
 			_draw_ruler_guides();
+			_draw_indicators(true);
 			_draw_connections();
+			_draw_selection_rect();
 			_draw_ruler_overlays();
-			_draw_playhead();
+			_draw_indicators(false);
 			break;
 		}
 	}
 
 	Vector2 TimelineConnectionEditor::_get_content_origin() const {
-		if (!ruler_enabled) {
-			return content_offset;
+		Vector2 origin = content_offset;
+		if (ruler_enabled) {
+			origin += Vector2(MAX(ruler_size.x, 0.0f), MAX(ruler_size.y, 0.0f));
 		}
-		return content_offset + Vector2(MAX(ruler_size.x, 0.0f), MAX(ruler_size.y, 0.0f));
+		origin.y += _get_vertical_range_center_offset(origin);
+		return origin;
+	}
+
+	float TimelineConnectionEditor::_get_vertical_range_center_offset(const Vector2 &p_base_origin) const {
+		if (!center_short_vertical_range || !range_limited) {
+			return 0.0f;
+		}
+
+		const Rect2 content_rect = _get_content_rect();
+		if (content_rect.size.y <= 0.0f) {
+			return 0.0f;
+		}
+
+		const float scale_y = Math::abs(content_scale.y) < 0.0001f ? 1.0f : content_scale.y;
+		const float range_height = Math::abs(range_max.y - range_min.y) * Math::abs(scale_y);
+		if (range_height <= 0.0f || range_height >= content_rect.size.y) {
+			return 0.0f;
+		}
+
+		const float min_y = MIN(range_min.y, range_max.y);
+		const float max_y = MAX(range_min.y, range_max.y);
+		const float range_center_y = (min_y + max_y) * 0.5f;
+		const float current_screen_center = p_base_origin.y + (range_center_y - scroll_offset.y) * scale_y;
+		const float target_screen_center = content_rect.position.y + content_rect.size.y * 0.5f;
+		return target_screen_center - current_screen_center;
 	}
 
 	Rect2 TimelineConnectionEditor::_get_content_rect() const {
@@ -366,19 +435,20 @@ namespace godot {
 	}
 
 	Vector2 TimelineConnectionEditor::_content_to_screen(const Vector2 &p_position) const {
-		return _get_content_origin() + Vector2((p_position.x - scroll_offset.x) * content_scale.x, (p_position.y - scroll_offset.y) * content_scale.y);
-	}
-
-	Vector2 TimelineConnectionEditor::_content_delta_to_screen(const Vector2 &p_delta) const {
-		return Vector2(p_delta.x * content_scale.x, p_delta.y * content_scale.y);
+		const double scroll_unit = _time_to_unit(scroll_offset.x);
+		return _get_content_origin() + Vector2(
+			static_cast<float>((_time_to_unit(p_position.x) - scroll_unit) * content_scale.x),
+			(p_position.y - scroll_offset.y) * content_scale.y
+		);
 	}
 
 	Vector2 TimelineConnectionEditor::_screen_to_content(const Vector2 &p_position) const {
 		const Vector2 origin = _get_content_origin();
 		const float scale_x = Math::abs(content_scale.x) < 0.0001f ? 1.0f : content_scale.x;
 		const float scale_y = Math::abs(content_scale.y) < 0.0001f ? 1.0f : content_scale.y;
+		const double unit = (p_position.x - origin.x) / scale_x + _time_to_unit(scroll_offset.x);
 		return Vector2(
-			(p_position.x - origin.x) / scale_x + scroll_offset.x,
+			static_cast<float>(_unit_to_time(unit)),
 			(p_position.y - origin.y) / scale_y + scroll_offset.y
 		);
 	}
@@ -512,6 +582,17 @@ namespace godot {
 		}
 	}
 
+	double TimelineConnectionEditor::_snap_time(double p_time) const {
+		if (!key_snap_enabled) {
+			return p_time;
+		}
+
+		const double snap_division = MAX(static_cast<double>(beat_per_bar), 1.0);
+		const double beat = _time_to_beat(p_time);
+		const double snapped_beat = std::round(beat * snap_division) / snap_division;
+		return _beat_to_time(snapped_beat);
+	}
+
 	String TimelineConnectionEditor::_format_playhead_time(double p_time) const {
 		switch (counting_unit) {
 		case FRAME:
@@ -559,17 +640,20 @@ namespace godot {
 		const Rect2 content_rect = _get_content_rect();
 		const float scale_x = Math::abs(content_scale.x) < 0.0001f ? 1.0f : Math::abs(content_scale.x);
 		const float scale_y = Math::abs(content_scale.y) < 0.0001f ? 1.0f : Math::abs(content_scale.y);
-		const float view_width = content_rect.size.x / scale_x;
+		const double view_width = content_rect.size.x / scale_x;
 		const float view_height = content_rect.size.y / scale_y;
 		const float min_x = MIN(range_min.x, range_max.x);
 		const float max_x = MAX(range_min.x, range_max.x);
 		const float min_y = MIN(range_min.y, range_max.y);
 		const float max_y = MAX(range_min.y, range_max.y);
-		const float max_scroll_x = MAX(min_x, max_x - view_width);
+		const double min_unit = std::min(_time_to_unit(min_x), _time_to_unit(max_x));
+		const double max_unit = std::max(_time_to_unit(min_x), _time_to_unit(max_x));
+		const double max_scroll_unit = MAX(min_unit, max_unit - view_width);
+		const double scroll_unit = CLAMP(_time_to_unit(p_offset.x), min_unit, max_scroll_unit);
 		const float max_scroll_y = MAX(min_y, max_y - view_height);
 
 		return Vector2(
-			CLAMP(p_offset.x, min_x, max_scroll_x),
+			static_cast<float>(_unit_to_time(scroll_unit)),
 			CLAMP(p_offset.y, min_y, max_scroll_y)
 		);
 	}
@@ -658,6 +742,70 @@ namespace godot {
 		}
 	}
 
+	Rect2 TimelineConnectionEditor::_make_selection_rect(const Vector2 &p_start, const Vector2 &p_end) const {
+		Rect2 selection_rect;
+		selection_rect.position.x = MIN(p_start.x, p_end.x);
+		selection_rect.position.y = MIN(p_start.y, p_end.y);
+		selection_rect.size.x = Math::abs(p_end.x - p_start.x);
+		selection_rect.size.y = Math::abs(p_end.y - p_start.y);
+
+		if (selection_rect.size.x < 2.0f && selection_rect.size.y < 2.0f) {
+			selection_rect = Rect2(p_start - Vector2(2.0f, 2.0f), Vector2(4.0f, 4.0f));
+		}
+		return selection_rect;
+	}
+
+	bool TimelineConnectionEditor::_collect_selected_points(const Rect2 &p_rect, bool p_additive) {
+		bool changed = false;
+		if (!p_additive) {
+			changed = _clear_point_selection();
+		}
+
+		if (!edit_enabled) {
+			if (changed) {
+				_emit_selection_changed();
+				queue_redraw();
+			}
+			return changed;
+		}
+
+		for (int i = 0; i < connections.size(); i++) {
+			Ref<TimelineConnection> connection = connections[i];
+			if (connection.is_null() || connection->is_disabled() || !connection->is_edit_enabled()) {
+				continue;
+			}
+
+			const float base_size = MAX(handle_radius * 2.0f, 8.0f);
+			const float key_size = base_size * MAX(connection->get_key_scale() >= 0.0f ? connection->get_key_scale() : style_cache.key_scale, 0.0f);
+			const Vector2 key_rect_size(key_size, key_size);
+			const int point_count = connection->get_point_count();
+			for (int point_index = 0; point_index < point_count; point_index++) {
+				TimelineConnectionPoint* point = connection->get_point(point_index);
+				if (point == nullptr) {
+					continue;
+				}
+
+				const Vector2 point_position = _content_to_screen(connection->get_point_position(point_index));
+				const Rect2 point_rect(point_position - key_rect_size * 0.5f, key_rect_size);
+				if (!p_rect.intersects(point_rect)) {
+					continue;
+				}
+
+				if (!point->is_selected()) {
+					point->set_selected_no_signal(true);
+					changed = true;
+				}
+				emit_signal("connection_point_selected", connection, point, point_index);
+			}
+		}
+
+		if (changed) {
+			_emit_selection_changed();
+			queue_redraw();
+		}
+		return changed;
+	}
+
 	Ref<StyleBox> TimelineConnectionEditor::_get_key_normal_style() const {
 		if (style_cache.key_normal.is_valid()) {
 			return style_cache.key_normal;
@@ -672,11 +820,25 @@ namespace godot {
 		return style_cache.key_selected_fallback;
 	}
 
-	Ref<StyleBox> TimelineConnectionEditor::_get_handle_style() const {
-		if (style_cache.handle.is_valid()) {
-			return style_cache.handle;
+	Ref<StyleBox> TimelineConnectionEditor::_get_handle_normal_style() const {
+		if (style_cache.handle_normal.is_valid()) {
+			return style_cache.handle_normal;
 		}
-		return style_cache.handle_fallback;
+		return style_cache.handle_normal_fallback;
+	}
+
+	Ref<StyleBox> TimelineConnectionEditor::_get_handle_selected_style() const {
+		if (style_cache.handle_selected.is_valid()) {
+			return style_cache.handle_selected;
+		}
+		return style_cache.handle_selected_fallback;
+	}
+
+	Ref<StyleBox> TimelineConnectionEditor::_get_selection_rect_style() const {
+		if (style_cache.selection_rect.is_valid()) {
+			return style_cache.selection_rect;
+		}
+		return style_cache.selection_rect_fallback;
 	}
 
 	float TimelineConnectionEditor::_get_smart_scroll_step(bool p_horizontal) const {
@@ -685,7 +847,13 @@ namespace godot {
 		const float safe_scale = Math::abs(scale_value) < 0.0001f ? 1.0f : Math::abs(scale_value);
 		const float viewport_size = p_horizontal ? content_rect.size.x : content_rect.size.y;
 		const float visible_units = viewport_size / safe_scale;
-		return CLAMP(visible_units * 0.12f, 0.25f, 256.0f);
+		const float step = CLAMP(visible_units * 0.12f, 0.25f, 256.0f);
+		if (!p_horizontal) {
+			return step;
+		}
+
+		const double scroll_unit = _time_to_unit(scroll_offset.x);
+		return MAX(static_cast<float>(Math::abs(_unit_to_time(scroll_unit + step) - scroll_offset.x)), 0.0001f);
 	}
 
 	void TimelineConnectionEditor::_scroll(const Vector2 &p_delta) {
@@ -703,9 +871,10 @@ namespace godot {
 		const float sign_y = content_scale.y < 0.0f ? -1.0f : 1.0f;
 		const float next_scale_x = CLAMP(Math::abs(content_scale.x) * p_factor, 0.01f, 4096.0f) * sign_x;
 		const float next_scale_y = CLAMP(Math::abs(content_scale.y) * p_factor, 0.01f, 4096.0f) * sign_y;
+		const double unit_before = _time_to_unit(content_before.x);
 		content_scale = Vector2(next_scale_x, next_scale_y);
 		scroll_offset = Vector2(
-			content_before.x - (p_position.x - origin.x) / next_scale_x,
+			static_cast<float>(_unit_to_time(unit_before - (p_position.x - origin.x) / next_scale_x)),
 			content_before.y - (p_position.y - origin.y) / next_scale_y
 		);
 		_update_scroll_bars();
@@ -715,7 +884,105 @@ namespace godot {
 	void TimelineConnectionEditor::_pan_view(const Vector2 &p_screen_delta) {
 		const float scale_x = Math::abs(content_scale.x) < 0.0001f ? 1.0f : content_scale.x;
 		const float scale_y = Math::abs(content_scale.y) < 0.0001f ? 1.0f : content_scale.y;
-		_scroll(Vector2(-p_screen_delta.x / scale_x, -p_screen_delta.y / scale_y));
+		const double scroll_unit = _time_to_unit(scroll_offset.x) - p_screen_delta.x / scale_x;
+		set_scroll_offset(Vector2(
+			static_cast<float>(_unit_to_time(scroll_unit)),
+			scroll_offset.y - p_screen_delta.y / scale_y
+		));
+	}
+
+	bool TimelineConnectionEditor::_wrap_middle_mouse_pan_position(Vector2 &r_position) {
+		const Size2 size = get_size();
+		if (size.x <= 0.0f || size.y <= 0.0f) {
+			return false;
+		}
+
+		const float margin = 2.0f;
+		const float left_wrap = MIN(margin, size.x * 0.5f);
+		const float right_wrap = MAX(size.x - margin, size.x * 0.5f);
+		const float top_wrap = MIN(margin, size.y * 0.5f);
+		const float bottom_wrap = MAX(size.y - margin, size.y * 0.5f);
+		Vector2 wrapped_position = r_position;
+
+		if (r_position.x < 0.0f) {
+			wrapped_position.x = right_wrap;
+		}
+		else if (r_position.x > size.x) {
+			wrapped_position.x = left_wrap;
+		}
+
+		if (r_position.y < 0.0f) {
+			wrapped_position.y = bottom_wrap;
+		}
+		else if (r_position.y > size.y) {
+			wrapped_position.y = top_wrap;
+		}
+
+		if (wrapped_position == r_position) {
+			return false;
+		}
+
+		warp_mouse(wrapped_position);
+		r_position = wrapped_position;
+		return true;
+	}
+
+	void TimelineConnectionEditor::_update_selection_auto_scroll(double p_delta) {
+		if (!selecting || p_delta <= 0.0) {
+			return;
+		}
+
+		const Rect2 content_rect = _get_content_rect();
+		if (content_rect.size.x <= 0.0f || content_rect.size.y <= 0.0f) {
+			return;
+		}
+
+		const float scale_x = Math::abs(content_scale.x) < 0.0001f ? 1.0f : content_scale.x;
+		const float scale_y = Math::abs(content_scale.y) < 0.0001f ? 1.0f : content_scale.y;
+		const float max_speed = 720.0f;
+		const float h_margin = CLAMP(content_rect.size.x * 0.12f, 24.0f, 64.0f);
+		const float v_margin = CLAMP(content_rect.size.y * 0.12f, 24.0f, 64.0f);
+		float speed_x = 0.0f;
+		float speed_y = 0.0f;
+
+		if (hscroll != nullptr && hscroll->is_visible()) {
+			const float left = content_rect.position.x;
+			const float right = content_rect.position.x + content_rect.size.x;
+			if (select_end.x < left + h_margin) {
+				speed_x = -CLAMP((left + h_margin - select_end.x) / h_margin, 0.0f, 1.0f) * max_speed;
+			}
+			else if (select_end.x > right - h_margin) {
+				speed_x = CLAMP((select_end.x - (right - h_margin)) / h_margin, 0.0f, 1.0f) * max_speed;
+			}
+		}
+
+		if (vscroll != nullptr && vscroll->is_visible()) {
+			const float top = content_rect.position.y;
+			const float bottom = content_rect.position.y + content_rect.size.y;
+			if (select_end.y < top + v_margin) {
+				speed_y = -CLAMP((top + v_margin - select_end.y) / v_margin, 0.0f, 1.0f) * max_speed;
+			}
+			else if (select_end.y > bottom - v_margin) {
+				speed_y = CLAMP((select_end.y - (bottom - v_margin)) / v_margin, 0.0f, 1.0f) * max_speed;
+			}
+		}
+
+		if (speed_x == 0.0f && speed_y == 0.0f) {
+			return;
+		}
+
+		const Vector2 start_content = _screen_to_content(select_start);
+		const double scroll_unit = _time_to_unit(scroll_offset.x) + speed_x * p_delta / scale_x;
+		const Vector2 before_scroll = scroll_offset;
+		set_scroll_offset(Vector2(
+			static_cast<float>(_unit_to_time(scroll_unit)),
+			scroll_offset.y + static_cast<float>(speed_y * p_delta / scale_y)
+		));
+
+		if (scroll_offset != before_scroll) {
+			select_start = _content_to_screen(start_content);
+			queue_redraw();
+		}
 	}
 
 	void TimelineConnectionEditor::_update_scroll_bars() {
@@ -727,8 +994,8 @@ namespace godot {
 		const Size2 vmin = vscroll->get_combined_minimum_size();
 		const float ruler_width = ruler_enabled ? MIN(MAX(ruler_size.x, 0.0f), get_size().x) : 0.0f;
 		const float ruler_height = ruler_enabled ? MIN(MAX(ruler_size.y, 0.0f), get_size().y) : 0.0f;
-		const float range_width = Math::abs(range_max.x - range_min.x) * Math::abs(content_scale.x);
 		const float range_height = Math::abs(range_max.y - range_min.y) * Math::abs(content_scale.y);
+		const float unit_range_width = static_cast<float>(Math::abs(_time_to_unit(range_max.x) - _time_to_unit(range_min.x)) * Math::abs(content_scale.x));
 
 		bool h_scroll_show = false;
 		bool v_scroll_show = false;
@@ -736,7 +1003,7 @@ namespace godot {
 			for (int i = 0; i < 3; i++) {
 				const float available_width = MAX(get_size().x - ruler_width - (v_scroll_show ? vmin.x : 0.0f), 0.0f);
 				const float available_height = MAX(get_size().y - ruler_height - (h_scroll_show ? hmin.y : 0.0f), 0.0f);
-				const bool new_h_scroll_show = range_width > available_width;
+				const bool new_h_scroll_show = unit_range_width > available_width;
 				const bool new_v_scroll_show = range_height > available_height;
 				if (new_h_scroll_show == h_scroll_show && new_v_scroll_show == v_scroll_show) {
 					break;
@@ -750,7 +1017,9 @@ namespace godot {
 		const float available_height = MAX(get_size().y - ruler_height - (h_scroll_show ? hmin.y : 0.0f), 0.0f);
 		const float scale_x = Math::abs(content_scale.x) < 0.0001f ? 1.0f : Math::abs(content_scale.x);
 		const float scale_y = Math::abs(content_scale.y) < 0.0001f ? 1.0f : Math::abs(content_scale.y);
-		const float page_x = available_width / scale_x;
+		const double page_unit = available_width / scale_x;
+		const double scroll_unit = _time_to_unit(scroll_offset.x);
+		const float page_x = MAX(static_cast<float>(Math::abs(_unit_to_time(scroll_unit + page_unit) - scroll_offset.x)), 0.0001f);
 		const float page_y = available_height / scale_y;
 		const float min_x = MIN(range_min.x, range_max.x);
 		const float max_x = MAX(range_min.x, range_max.x);
@@ -859,7 +1128,7 @@ namespace godot {
 	}
 
 	double TimelineConnectionEditor::_get_time_at_position(const Vector2 &p_position) const {
-		double time = _screen_to_content(p_position).x;
+		double time = _snap_time(_screen_to_content(p_position).x);
 		if (range_limited) {
 			const double min_time = MIN(range_min.x, range_max.x);
 			const double max_time = MAX(range_min.x, range_max.x);
@@ -885,6 +1154,82 @@ namespace godot {
 			}
 		}
 		return selected_points;
+	}
+
+	Dictionary TimelineConnectionEditor::_get_point_metadata(const Ref<TimelineConnection> &p_connection, int p_point_index) const {
+		if (p_connection.is_null() || p_point_index < 0 || p_point_index >= p_connection->get_point_count()) {
+			return Dictionary();
+		}
+
+		TimelineConnectionPoint* point = p_connection->get_point(p_point_index);
+		if (point == nullptr) {
+			return Dictionary();
+		}
+
+		const Variant metadata = point->get_metadata();
+		if (metadata.get_type() != Variant::DICTIONARY) {
+			return Dictionary();
+		}
+		return metadata;
+	}
+
+	bool TimelineConnectionEditor::_is_segment_bezier(const Ref<TimelineConnection> &p_connection, int p_point_index) const {
+		if (p_connection.is_null() || p_connection->get_curve_mode() != TimelineConnection::CURVE_BEZIER) {
+			return false;
+		}
+
+		const Dictionary metadata = _get_point_metadata(p_connection, p_point_index);
+		if (!metadata.has("segment_curve_mode")) {
+			return true;
+		}
+		return String(metadata.get("segment_curve_mode", String("bezier"))) == String("bezier");
+	}
+
+	bool TimelineConnectionEditor::_is_in_handle_visible(const Ref<TimelineConnection> &p_connection, int p_point_index) const {
+		if (p_connection.is_null() || p_connection->get_curve_mode() != TimelineConnection::CURVE_BEZIER || p_point_index <= 0) {
+			return false;
+		}
+
+		const Dictionary metadata = _get_point_metadata(p_connection, p_point_index);
+		if (!metadata.has("in_handle_visible")) {
+			return true;
+		}
+		return bool(metadata.get("in_handle_visible", true));
+	}
+
+	bool TimelineConnectionEditor::_is_out_handle_visible(const Ref<TimelineConnection> &p_connection, int p_point_index) const {
+		if (p_connection.is_null() || p_connection->get_curve_mode() != TimelineConnection::CURVE_BEZIER || p_point_index >= p_connection->get_point_count() - 1) {
+			return false;
+		}
+
+		const Dictionary metadata = _get_point_metadata(p_connection, p_point_index);
+		if (!metadata.has("out_handle_visible")) {
+			return true;
+		}
+		return bool(metadata.get("out_handle_visible", true));
+	}
+
+	bool TimelineConnectionEditor::_get_segment_samples(const Ref<TimelineConnection> &p_connection, int p_point_index, std::vector<Vector2> &r_samples) const {
+		r_samples.clear();
+		const Dictionary metadata = _get_point_metadata(p_connection, p_point_index);
+		if (!metadata.has("segment_samples")) {
+			return false;
+		}
+
+		const Variant samples_value = metadata.get("segment_samples", Array());
+		if (samples_value.get_type() != Variant::ARRAY) {
+			return false;
+		}
+
+		const Array samples = samples_value;
+		r_samples.reserve(samples.size());
+		for (int i = 0; i < samples.size(); i++) {
+			const Variant sample = samples[i];
+			if (sample.get_type() == Variant::VECTOR2) {
+				r_samples.push_back(sample);
+			}
+		}
+		return r_samples.size() >= 2;
 	}
 
 	bool TimelineConnectionEditor::_clear_point_selection() {
@@ -977,15 +1322,13 @@ namespace godot {
 			const int point_count = connection->get_point_count();
 			for (int point_index = point_count - 1; point_index >= 0; point_index--) {
 				const Vector2 point_content = connection->get_point_position(point_index);
-				if (connection->get_curve_mode() == TimelineConnection::CURVE_BEZIER) {
-					if (point_index > 0) {
-						const Vector2 in_handle_content = point_content + connection->get_point_in_handle(point_index);
-						try_target(connection, DRAG_TARGET_IN_HANDLE, point_index, _content_to_screen(in_handle_content), in_handle_content);
-					}
-					if (point_index < point_count - 1) {
-						const Vector2 out_handle_content = point_content + connection->get_point_out_handle(point_index);
-						try_target(connection, DRAG_TARGET_OUT_HANDLE, point_index, _content_to_screen(out_handle_content), out_handle_content);
-					}
+				if (_is_in_handle_visible(connection, point_index)) {
+					const Vector2 in_handle_content = point_content + connection->get_point_in_handle(point_index);
+					try_target(connection, DRAG_TARGET_IN_HANDLE, point_index, _content_to_screen(in_handle_content), in_handle_content);
+				}
+				if (_is_out_handle_visible(connection, point_index)) {
+					const Vector2 out_handle_content = point_content + connection->get_point_out_handle(point_index);
+					try_target(connection, DRAG_TARGET_OUT_HANDLE, point_index, _content_to_screen(out_handle_content), out_handle_content);
 				}
 				try_target(connection, DRAG_TARGET_POINT, point_index, _content_to_screen(point_content), point_content);
 			}
@@ -999,7 +1342,11 @@ namespace godot {
 			return;
 		}
 
-		const Vector2 target_content = _clamp_content_position(_screen_to_content(p_position) + drag_content_offset);
+		Vector2 target_content = _screen_to_content(p_position) + drag_content_offset;
+		if (drag_target == DRAG_TARGET_POINT) {
+			target_content.x = static_cast<float>(_snap_time(target_content.x));
+		}
+		target_content = _clamp_content_position(target_content);
 		Vector2 signal_position = target_content;
 		switch (drag_target) {
 		case DRAG_TARGET_POINT:
@@ -1070,12 +1417,11 @@ namespace godot {
 		const double scale_y = std::abs(content_scale.y) < 0.0001 ? 1.0 : content_scale.y;
 		const double min_spacing = MAX(ruler_min_tick_spacing, 12.0f);
 
-		const double visible_x_a = (content_rect.position.x - origin.x) / scale_x + scroll_offset.x;
-		const double visible_x_b = (content_rect.position.x + content_rect.size.x - origin.x) / scale_x + scroll_offset.x;
+		const double scroll_unit = _time_to_unit(scroll_offset.x);
+		const double visible_unit_a = (content_rect.position.x - origin.x) / scale_x + scroll_unit;
+		const double visible_unit_b = (content_rect.position.x + content_rect.size.x - origin.x) / scale_x + scroll_unit;
 		const double visible_y_a = (content_rect.position.y - origin.y) / scale_y + scroll_offset.y;
 		const double visible_y_b = (content_rect.position.y + content_rect.size.y - origin.y) / scale_y + scroll_offset.y;
-		const double visible_unit_a = _time_to_unit(visible_x_a);
-		const double visible_unit_b = _time_to_unit(visible_x_b);
 		const double min_x = std::min(visible_unit_a, visible_unit_b);
 		const double max_x = std::max(visible_unit_a, visible_unit_b);
 		const double min_y = std::min(visible_y_a, visible_y_b);
@@ -1092,14 +1438,15 @@ namespace godot {
 			if (!std::isfinite(time)) {
 				continue;
 			}
-			const float x = static_cast<float>(origin.x + (time - scroll_offset.x) * scale_x);
+			const float x = static_cast<float>(origin.x + (value - scroll_unit) * scale_x);
 			if (x < content_rect.position.x || x > content_rect.position.x + content_rect.size.x) {
 				continue;
 			}
+			const bool zero_tick = highlight_zero_tick && std::abs(value) <= minor_step_x * 0.1;
 			draw_line(
 				Point2(x, content_rect.position.y),
 				Point2(x, content_rect.position.y + content_rect.size.y),
-				major ? ruler_major_grid_color : ruler_minor_grid_color,
+				zero_tick ? style_cache.zero_tick_color : (major ? ruler_major_grid_color : ruler_minor_grid_color),
 				1.0f
 			);
 		}
@@ -1111,10 +1458,11 @@ namespace godot {
 			if (y < content_rect.position.y || y > content_rect.position.y + content_rect.size.y) {
 				continue;
 			}
+			const bool zero_tick = highlight_zero_tick && std::abs(value) <= minor_step_y * 0.1;
 			draw_line(
 				Point2(content_rect.position.x, y),
 				Point2(content_rect.position.x + content_rect.size.x, y),
-				major ? ruler_major_grid_color : ruler_minor_grid_color,
+				zero_tick ? style_cache.zero_tick_color : (major ? ruler_major_grid_color : ruler_minor_grid_color),
 				1.0f
 			);
 		}
@@ -1126,17 +1474,20 @@ namespace godot {
 		}
 
 		const Rect2 content_rect = _get_content_rect();
+		const float ruler_width = content_rect.position.x;
+		const float ruler_height = content_rect.position.y;
+		if (ruler_height > 0.0f) {
+			draw_rect(Rect2(Vector2(), Vector2(get_size().x, ruler_height)), ruler_background_color);
+		}
+		if (ruler_width > 0.0f) {
+			draw_rect(Rect2(Vector2(0.0f, ruler_height), Vector2(ruler_width, MAX(get_size().y - ruler_height, 0.0f))), ruler_background_color);
+		}
+		draw_line(Point2(ruler_width, 0.0f), Point2(ruler_width, get_size().y), ruler_tick_color, 1.0f);
+		draw_line(Point2(0.0f, ruler_height), Point2(get_size().x, ruler_height), ruler_tick_color, 1.0f);
+
 		if (content_rect.size.x <= 0.0f || content_rect.size.y <= 0.0f) {
 			return;
 		}
-
-		const float ruler_width = content_rect.position.x;
-		const float ruler_height = content_rect.position.y;
-		draw_rect(Rect2(Vector2(), Vector2(ruler_width, ruler_height)), ruler_background_color);
-		draw_rect(Rect2(Vector2(ruler_width, 0.0f), Vector2(content_rect.size.x, ruler_height)), ruler_background_color);
-		draw_rect(Rect2(Vector2(0.0f, ruler_height), Vector2(ruler_width, content_rect.size.y)), ruler_background_color);
-		draw_line(Point2(ruler_width, 0.0f), Point2(ruler_width, get_size().y), ruler_tick_color, 1.0f);
-		draw_line(Point2(0.0f, ruler_height), Point2(get_size().x, ruler_height), ruler_tick_color, 1.0f);
 
 		const Rect2 clip_rect = _get_draw_clip_rect();
 		if (clip_rect.size.x <= 0.0f || clip_rect.size.y <= 0.0f) {
@@ -1150,12 +1501,11 @@ namespace godot {
 		const double scale_x = std::abs(content_scale.x) < 0.0001 ? 1.0 : content_scale.x;
 		const double scale_y = std::abs(content_scale.y) < 0.0001 ? 1.0 : content_scale.y;
 		const double min_spacing = MAX(ruler_min_tick_spacing, 12.0f);
-		const double visible_x_a = (clip_rect.position.x - origin.x) / scale_x + scroll_offset.x;
-		const double visible_x_b = (clip_rect.position.x + clip_rect.size.x - origin.x) / scale_x + scroll_offset.x;
+		const double scroll_unit = _time_to_unit(scroll_offset.x);
+		const double visible_unit_a = (clip_rect.position.x - origin.x) / scale_x + scroll_unit;
+		const double visible_unit_b = (clip_rect.position.x + clip_rect.size.x - origin.x) / scale_x + scroll_unit;
 		const double visible_y_a = (clip_rect.position.y - origin.y) / scale_y + scroll_offset.y;
 		const double visible_y_b = (clip_rect.position.y + clip_rect.size.y - origin.y) / scale_y + scroll_offset.y;
-		const double visible_unit_a = _time_to_unit(visible_x_a);
-		const double visible_unit_b = _time_to_unit(visible_x_b);
 		const double min_x = std::min(visible_unit_a, visible_unit_b);
 		const double max_x = std::max(visible_unit_a, visible_unit_b);
 		const double min_y = std::min(visible_y_a, visible_y_b);
@@ -1175,14 +1525,17 @@ namespace godot {
 			if (!std::isfinite(time)) {
 				continue;
 			}
-			const float x = static_cast<float>(origin.x + (time - scroll_offset.x) * scale_x);
+			const float x = static_cast<float>(origin.x + (value - scroll_unit) * scale_x);
 			if (x < clip_rect.position.x || x > clip_rect.position.x + clip_rect.size.x) {
 				continue;
 			}
+			const bool zero_tick = highlight_zero_tick && std::abs(value) <= minor_step_x * 0.1;
+			const Color tick_color = zero_tick ? style_cache.zero_tick_color : ruler_tick_color;
+			const Color text_color = zero_tick ? style_cache.zero_tick_color : ruler_text_color;
 			const float tick = major ? major_tick : minor_tick;
-			draw_line(Point2(x, ruler_height - tick), Point2(x, ruler_height), ruler_tick_color, 1.0f);
+			draw_line(Point2(x, ruler_height - tick), Point2(x, ruler_height), tick_color, 1.0f);
 			if (major && font.is_valid()) {
-				draw_string(font, Point2(x + 3.0f, ruler_height - 6.0f), _format_ruler_x_value(time), HORIZONTAL_ALIGNMENT_LEFT, -1, ruler_font_size, ruler_text_color);
+				draw_string(font, Point2(x + 3.0f, ruler_height - 6.0f), _format_ruler_x_value(time), HORIZONTAL_ALIGNMENT_LEFT, -1, ruler_font_size, text_color);
 			}
 		}
 
@@ -1193,10 +1546,13 @@ namespace godot {
 			if (y < clip_rect.position.y || y > clip_rect.position.y + clip_rect.size.y) {
 				continue;
 			}
+			const bool zero_tick = highlight_zero_tick && std::abs(value) <= minor_step_y * 0.1;
+			const Color tick_color = zero_tick ? style_cache.zero_tick_color : ruler_tick_color;
+			const Color text_color = zero_tick ? style_cache.zero_tick_color : ruler_text_color;
 			const float tick = major ? major_tick : minor_tick;
-			draw_line(Point2(ruler_width - tick, y), Point2(ruler_width, y), ruler_tick_color, 1.0f);
+			draw_line(Point2(ruler_width - tick, y), Point2(ruler_width, y), tick_color, 1.0f);
 			if (major && font.is_valid()) {
-				draw_string(font, Point2(3.0f, y - 3.0f), format_ruler_value(value), HORIZONTAL_ALIGNMENT_LEFT, ruler_width - 6.0f, ruler_font_size, ruler_text_color);
+				draw_string(font, Point2(3.0f, y - 3.0f), format_ruler_value(value), HORIZONTAL_ALIGNMENT_LEFT, ruler_width - 6.0f, ruler_font_size, text_color);
 			}
 		}
 	}
@@ -1212,8 +1568,12 @@ namespace godot {
 		}
 		for (int i = 0; i < connections.size(); i++) {
 			Ref<TimelineConnection> connection = connections[i];
-			const float line_width = MAX(style_cache.bezier_line_width, 0.0f);
-			if (connection.is_null() || connection->is_disabled() || line_width <= 0.0f) {
+			if (connection.is_null() || connection->is_disabled()) {
+				continue;
+			}
+
+			const float line_width = MAX(connection->get_width() >= 0.0f ? connection->get_width() : style_cache.bezier_line_width, 0.0f);
+			if (line_width <= 0.0f) {
 				continue;
 			}
 
@@ -1245,13 +1605,20 @@ namespace godot {
 			};
 
 			for (int point_index = 0; point_index < point_count; point_index++) {
-				const Vector2 point_position = _content_to_screen(connection->get_point_position(point_index));
+				const Vector2 point_content = connection->get_point_position(point_index);
+				const Vector2 point_position = _content_to_screen(point_content);
 				include_bounds(point_position);
-				if (bezier && point_index > 0) {
-					include_bounds(point_position + _content_delta_to_screen(connection->get_point_in_handle(point_index)));
+				std::vector<Vector2> segment_samples;
+				if (point_index < point_count - 1 && _get_segment_samples(connection, point_index, segment_samples)) {
+					for (const Vector2 &sample : segment_samples) {
+						include_bounds(_content_to_screen(sample));
+					}
 				}
-				if (bezier && point_index < point_count - 1) {
-					include_bounds(point_position + _content_delta_to_screen(connection->get_point_out_handle(point_index)));
+				if (bezier && _is_in_handle_visible(connection, point_index)) {
+					include_bounds(_content_to_screen(point_content + connection->get_point_in_handle(point_index)));
+				}
+				if (bezier && _is_out_handle_visible(connection, point_index)) {
+					include_bounds(_content_to_screen(point_content + connection->get_point_out_handle(point_index)));
 				}
 			}
 
@@ -1269,8 +1636,18 @@ namespace godot {
 
 			const Color color = connection->get_color();
 			if (point_count >= 2) {
-				if (!bezier) {
-					for (int point_index = 0; point_index < point_count - 1; point_index++) {
+				const int segments = CLAMP(connection->get_curve_segments(), 2, 256);
+				for (int point_index = 0; point_index < point_count - 1; point_index++) {
+					std::vector<Vector2> segment_samples;
+					if (_get_segment_samples(connection, point_index, segment_samples)) {
+						Vector2 previous = _content_to_screen(segment_samples[0]);
+						for (int sample_index = 1; sample_index < static_cast<int>(segment_samples.size()); sample_index++) {
+							const Vector2 current = _content_to_screen(segment_samples[sample_index]);
+							_draw_clipped_line(previous, current, color, line_width, viewport_rect);
+							previous = current;
+						}
+					}
+					else if (!bezier || !_is_segment_bezier(connection, point_index)) {
 						_draw_clipped_line(
 							_content_to_screen(connection->get_point_position(point_index)),
 							_content_to_screen(connection->get_point_position(point_index + 1)),
@@ -1279,14 +1656,13 @@ namespace godot {
 							viewport_rect
 						);
 					}
-				}
-				else {
-					const int segments = CLAMP(connection->get_curve_segments(), 2, 256);
-					for (int point_index = 0; point_index < point_count - 1; point_index++) {
-						const Vector2 segment_from = _content_to_screen(connection->get_point_position(point_index));
-						const Vector2 segment_to = _content_to_screen(connection->get_point_position(point_index + 1));
-						const Vector2 control_a = segment_from + _content_delta_to_screen(connection->get_point_out_handle(point_index));
-						const Vector2 control_b = segment_to + _content_delta_to_screen(connection->get_point_in_handle(point_index + 1));
+					else {
+						const Vector2 point_a = connection->get_point_position(point_index);
+						const Vector2 point_b = connection->get_point_position(point_index + 1);
+						const Vector2 segment_from = _content_to_screen(point_a);
+						const Vector2 segment_to = _content_to_screen(point_b);
+						const Vector2 control_a = _content_to_screen(point_a + connection->get_point_out_handle(point_index));
+						const Vector2 control_b = _content_to_screen(point_b + connection->get_point_in_handle(point_index + 1));
 						Vector2 previous = segment_from;
 						for (int segment = 1; segment <= segments; segment++) {
 							const float t = static_cast<float>(segment) / static_cast<float>(segments);
@@ -1299,32 +1675,38 @@ namespace godot {
 			}
 
 			if (edit_enabled && connection->is_edit_enabled()) {
-				const float handle_line_width = MAX(style_cache.handle_line_width, 0.0f);
+				const float handle_line_width = MAX(connection->get_handle_line_width() >= 0.0f ? connection->get_handle_line_width() : style_cache.handle_line_width, 0.0f);
 				const float base_size = MAX(handle_radius * 2.0f, 8.0f);
-				const float key_size = base_size * MAX(style_cache.key_scale, 0.0f);
-				const float handle_size = base_size * MAX(style_cache.handle_scale, 0.0f);
-				const Ref<StyleBox> key_normal_style = _get_key_normal_style();
-				const Ref<StyleBox> key_selected_style = _get_key_selected_style();
-				const Ref<StyleBox> handle_style = _get_handle_style();
+				const float key_size = base_size * MAX(connection->get_key_scale() >= 0.0f ? connection->get_key_scale() : style_cache.key_scale, 0.0f);
+				const float handle_size = base_size * MAX(connection->get_handle_scale() >= 0.0f ? connection->get_handle_scale() : style_cache.handle_scale, 0.0f);
+				const Ref<StyleBox> connection_key_normal_style = connection->get_key_normal_style();
+				const Ref<StyleBox> connection_key_selected_style = connection->get_key_selected_style();
+				const Ref<StyleBox> connection_handle_normal_style = connection->get_handle_normal_style();
+				const Ref<StyleBox> connection_handle_selected_style = connection->get_handle_selected_style();
+				const Ref<StyleBox> key_normal_style = connection_key_normal_style.is_valid() ? connection_key_normal_style : _get_key_normal_style();
+				const Ref<StyleBox> key_selected_style = connection_key_selected_style.is_valid() ? connection_key_selected_style : _get_key_selected_style();
+				const Ref<StyleBox> handle_normal_style = connection_handle_normal_style.is_valid() ? connection_handle_normal_style : _get_handle_normal_style();
+				const Ref<StyleBox> handle_selected_style = connection_handle_selected_style.is_valid() ? connection_handle_selected_style : _get_handle_selected_style();
 				for (int point_index = 0; point_index < point_count; point_index++) {
 					TimelineConnectionPoint* point = connection->get_point(point_index);
-					const Vector2 point_position = _content_to_screen(connection->get_point_position(point_index));
+					const Vector2 point_content = connection->get_point_position(point_index);
+					const Vector2 point_position = _content_to_screen(point_content);
 					const bool point_selected = (point != nullptr && point->is_selected()) || (dragged_connection == connection && drag_point_index == point_index && drag_target == DRAG_TARGET_POINT);
-					if (bezier && point_index > 0) {
-						const Vector2 in_handle_position = point_position + _content_delta_to_screen(connection->get_point_in_handle(point_index));
+					if (bezier && _is_in_handle_visible(connection, point_index)) {
+						const Vector2 in_handle_position = _content_to_screen(point_content + connection->get_point_in_handle(point_index));
 						const bool handle_selected = (point != nullptr && point->is_selected()) || (dragged_connection == connection && drag_point_index == point_index && drag_target == DRAG_TARGET_IN_HANDLE);
 						if (handle_line_width > 0.0f) {
 							_draw_clipped_line(point_position, in_handle_position, handle_selected ? style_cache.handle_line_selected_color : style_cache.handle_line_color, handle_line_width, viewport_rect);
 						}
-						_draw_clipped_style_box(in_handle_position, handle_size, handle_style, viewport_rect);
+						_draw_clipped_style_box(in_handle_position, handle_size, handle_selected ? handle_selected_style : handle_normal_style, viewport_rect);
 					}
-					if (bezier && point_index < point_count - 1) {
-						const Vector2 out_handle_position = point_position + _content_delta_to_screen(connection->get_point_out_handle(point_index));
+					if (bezier && _is_out_handle_visible(connection, point_index)) {
+						const Vector2 out_handle_position = _content_to_screen(point_content + connection->get_point_out_handle(point_index));
 						const bool handle_selected = (point != nullptr && point->is_selected()) || (dragged_connection == connection && drag_point_index == point_index && drag_target == DRAG_TARGET_OUT_HANDLE);
 						if (handle_line_width > 0.0f) {
 							_draw_clipped_line(point_position, out_handle_position, handle_selected ? style_cache.handle_line_selected_color : style_cache.handle_line_color, handle_line_width, viewport_rect);
 						}
-						_draw_clipped_style_box(out_handle_position, handle_size, handle_style, viewport_rect);
+						_draw_clipped_style_box(out_handle_position, handle_size, handle_selected ? handle_selected_style : handle_normal_style, viewport_rect);
 					}
 					_draw_clipped_style_box(point_position, key_size, point_selected ? key_selected_style : key_normal_style, viewport_rect);
 				}
@@ -1332,7 +1714,23 @@ namespace godot {
 		}
 	}
 
-	void TimelineConnectionEditor::_draw_playhead() {
+	void TimelineConnectionEditor::_draw_selection_rect() {
+		if (!selecting) {
+			return;
+		}
+
+		const Rect2 selection_rect = _make_selection_rect(select_start, select_end);
+		const Ref<StyleBox> style = _get_selection_rect_style();
+		if (style.is_valid()) {
+			draw_style_box(style, selection_rect);
+			return;
+		}
+
+		draw_rect(selection_rect, Color(1.0f, 1.0f, 1.0f, 0.3f));
+		draw_rect(selection_rect, Color(1.0f, 1.0f, 1.0f), false);
+	}
+
+	void TimelineConnectionEditor::_draw_playhead(bool p_draw_line) {
 		if (playhead.is_null()) {
 			return;
 		}
@@ -1352,7 +1750,42 @@ namespace godot {
 		const float header_width = 48.0f;
 		const Rect2 header_rect(Vector2(x - header_width * 0.5f, 0.0f), Vector2(header_width, header_height));
 		const double line_length = MAX(content_rect.position.y + content_rect.size.y - (header_rect.position.y + header_rect.size.y * 0.5f), 0.0f);
-		playhead->draw(get_canvas_item(), header_rect, _format_playhead_time(current_time), line_length, true);
+		playhead->draw(get_canvas_item(), header_rect, _format_playhead_time(current_time), p_draw_line ? line_length : 0.0, true);
+	}
+
+	void TimelineConnectionEditor::_draw_marker(const Ref<TimelineMarker>& p_marker, bool p_draw_line) {
+		if (p_marker.is_null()) {
+			return;
+		}
+
+		const Rect2 content_rect = _get_content_rect();
+		const Rect2 clip_rect = _get_draw_clip_rect();
+		if (content_rect.size.x <= 0.0f || content_rect.size.y <= 0.0f || clip_rect.size.x <= 0.0f || clip_rect.size.y <= 0.0f) {
+			return;
+		}
+
+		const double time = p_marker->get_time();
+		const float x = static_cast<float>(get_position_from_time(time));
+		if (x < clip_rect.position.x || x > clip_rect.position.x + clip_rect.size.x) {
+			return;
+		}
+
+		const float header_height = ruler_enabled ? MAX(content_rect.position.y, 16.0f) : 16.0f;
+		const float header_width = 48.0f;
+		const Rect2 header_rect(Vector2(x - header_width * 0.5f, 0.0f), Vector2(header_width, header_height));
+		const double line_length = MAX(content_rect.position.y + content_rect.size.y - (header_rect.position.y + header_rect.size.y * 0.5f), 0.0f);
+		p_marker->draw(get_canvas_item(), header_rect, _format_playhead_time(time), p_draw_line ? line_length : 0.0, true);
+	}
+
+	void TimelineConnectionEditor::_draw_indicators(bool p_draw_line) {
+		for (int i = 0; i < markers.size(); i++) {
+			Ref<TimelineMarker> marker = markers[i];
+			if (marker.is_valid()) {
+				_draw_marker(marker, p_draw_line);
+			}
+		}
+
+		_draw_playhead(p_draw_line);
 	}
 
 	void TimelineConnectionEditor::_on_resource_changed() {
@@ -1393,14 +1826,30 @@ namespace godot {
 		key_selected->set_corner_radius_all(512);
 		style_cache.key_selected_fallback = key_selected;
 
-		Ref<StyleBoxFlat> handle;
-		handle.instantiate();
-		handle->set_bg_color(Color(0.45f, 0.72f, 1.0f, 0.9f));
-		handle->set_border_width_all(1);
-		handle->set_border_color(Color(1.0f, 1.0f, 1.0f, 0.5f));
-		handle->set_corner_detail(4);
-		handle->set_corner_radius_all(512);
-		style_cache.handle_fallback = handle;
+		Ref<StyleBoxFlat> handle_normal;
+		handle_normal.instantiate();
+		handle_normal->set_bg_color(Color(0.45f, 0.72f, 1.0f, 0.9f));
+		handle_normal->set_border_width_all(1);
+		handle_normal->set_border_color(Color(1.0f, 1.0f, 1.0f, 0.5f));
+		handle_normal->set_corner_detail(4);
+		handle_normal->set_corner_radius_all(512);
+		style_cache.handle_normal_fallback = handle_normal;
+
+		Ref<StyleBoxFlat> handle_selected;
+		handle_selected.instantiate();
+		handle_selected->set_bg_color(Color(1.0f, 0.78f, 0.24f, 0.95f));
+		handle_selected->set_border_width_all(1);
+		handle_selected->set_border_color(Color(1.0f, 1.0f, 1.0f, 0.7f));
+		handle_selected->set_corner_detail(4);
+		handle_selected->set_corner_radius_all(512);
+		style_cache.handle_selected_fallback = handle_selected;
+
+		Ref<StyleBoxFlat> selection_rect;
+		selection_rect.instantiate();
+		selection_rect->set_bg_color(Color(1.0f, 1.0f, 1.0f, 0.16f));
+		selection_rect->set_border_width_all(1);
+		selection_rect->set_border_color(Color(1.0f, 1.0f, 1.0f, 0.72f));
+		style_cache.selection_rect_fallback = selection_rect;
 	}
 
 	void TimelineConnectionEditor::_gui_input(const Ref<InputEvent> &p_gui_input) {
@@ -1408,11 +1857,13 @@ namespace godot {
 		if (mouse_button.is_valid() && mouse_button->get_button_index() == MouseButton::MOUSE_BUTTON_MIDDLE) {
 			if (mouse_button->is_pressed() && scroll_enabled && _get_content_rect().has_point(mouse_button->get_position())) {
 				middle_mouse_panning = true;
+				middle_mouse_pan_last_position = mouse_button->get_position();
 				set_default_cursor_shape(Control::CURSOR_CROSS);
 				accept_event();
 			}
 			else if (!mouse_button->is_pressed() && middle_mouse_panning) {
 				middle_mouse_panning = false;
+				middle_mouse_pan_last_position = Vector2();
 				set_default_cursor_shape(Control::CURSOR_ARROW);
 				accept_event();
 			}
@@ -1476,14 +1927,6 @@ namespace godot {
 
 		if (mouse_button.is_valid() && mouse_button->get_button_index() == MouseButton::MOUSE_BUTTON_LEFT) {
 			if (mouse_button->is_pressed()) {
-				if (_is_playhead_drag_area_at_position(mouse_button->get_position())) {
-					playhead_dragging = true;
-					set_current_time(_get_time_at_position(mouse_button->get_position()));
-					emit_signal("playhead_drag_started", current_time);
-					accept_event();
-					return;
-				}
-
 				Ref<TimelineConnection> connection;
 				DragTarget target = DRAG_TARGET_NONE;
 				int point_index = -1;
@@ -1501,10 +1944,32 @@ namespace godot {
 					set_default_cursor_shape(Control::CURSOR_MOVE);
 					accept_event();
 				}
-				else if (_get_content_rect().has_point(mouse_button->get_position()) && _clear_point_selection()) {
-					_emit_selection_changed();
-					queue_redraw();
+				else if (_is_playhead_drag_area_at_position(mouse_button->get_position())) {
+					playhead_dragging = true;
+					set_current_time(_get_time_at_position(mouse_button->get_position()));
+					emit_signal("playhead_drag_started", current_time);
+					accept_event();
+					return;
 				}
+				else if (edit_enabled && _get_content_rect().has_point(mouse_button->get_position())) {
+					selecting = true;
+					selection_additive = mouse_button->is_shift_pressed();
+					select_start = mouse_button->get_position();
+					select_end = select_start;
+					set_process_internal(true);
+					queue_redraw();
+					accept_event();
+				}
+			}
+			else if (selecting) {
+				selecting = false;
+				select_end = mouse_button->get_position();
+				const Rect2 selection_rect = _make_selection_rect(select_start, select_end);
+				_collect_selected_points(selection_rect, selection_additive);
+				selection_additive = false;
+				set_process_internal(false);
+				queue_redraw();
+				accept_event();
 			}
 			else if (playhead_dragging) {
 				set_current_time(_get_time_at_position(mouse_button->get_position()));
@@ -1523,8 +1988,19 @@ namespace godot {
 		Ref<InputEventMouseMotion> mouse_motion = p_gui_input;
 		if (mouse_motion.is_valid()) {
 			if (middle_mouse_panning) {
-				_pan_view(mouse_motion->get_relative());
+				Vector2 current_position = mouse_motion->get_position();
+				_pan_view(current_position - middle_mouse_pan_last_position);
+				middle_mouse_pan_last_position = current_position;
+				_wrap_middle_mouse_pan_position(current_position);
+				middle_mouse_pan_last_position = current_position;
 				set_default_cursor_shape(Control::CURSOR_CROSS);
+				accept_event();
+				return;
+			}
+
+			if (selecting) {
+				select_end = mouse_motion->get_position();
+				queue_redraw();
 				accept_event();
 				return;
 			}
@@ -1695,6 +2171,7 @@ namespace godot {
 
 		counting_unit = p_unit;
 		notify_property_list_changed();
+		_update_scroll_bars();
 		queue_redraw();
 	}
 
@@ -1704,6 +2181,7 @@ namespace godot {
 
 	void TimelineConnectionEditor::set_fps(int p_fps) {
 		fps = MAX(p_fps, 1);
+		_update_scroll_bars();
 		queue_redraw();
 	}
 
@@ -1711,8 +2189,18 @@ namespace godot {
 		return fps;
 	}
 
+	void TimelineConnectionEditor::set_beat_per_bar(int p_num) {
+		beat_per_bar = MAX(p_num, 1);
+		queue_redraw();
+	}
+
+	int TimelineConnectionEditor::get_beat_per_bar() const {
+		return beat_per_bar;
+	}
+
 	void TimelineConnectionEditor::set_bpms(const Dictionary &p_bpms) {
 		bpms = p_bpms;
+		_update_scroll_bars();
 		queue_redraw();
 	}
 
@@ -1737,6 +2225,29 @@ namespace godot {
 		return playhead;
 	}
 
+	void TimelineConnectionEditor::set_markers(const TypedArray<TimelineMarker>& p_markers) {
+		const Callable changed_callable = callable_mp(this, &TimelineConnectionEditor::_on_resource_changed);
+		for (int i = 0; i < markers.size(); i++) {
+			Ref<TimelineMarker> marker = markers[i];
+			if (marker.is_valid() && marker->is_connected("changed", changed_callable)) {
+				marker->disconnect("changed", changed_callable);
+			}
+		}
+
+		markers = p_markers;
+		for (int i = 0; i < markers.size(); i++) {
+			Ref<TimelineMarker> marker = markers[i];
+			if (marker.is_valid() && !marker->is_connected("changed", changed_callable)) {
+				marker->connect("changed", changed_callable);
+			}
+		}
+		queue_redraw();
+	}
+
+	TypedArray<TimelineMarker> TimelineConnectionEditor::get_markers() const {
+		return markers;
+	}
+
 	void TimelineConnectionEditor::set_playhead_drag_enabled(bool p_enabled) {
 		playhead_drag_enabled = p_enabled;
 		if (!playhead_drag_enabled) {
@@ -1747,6 +2258,32 @@ namespace godot {
 
 	bool TimelineConnectionEditor::is_playhead_drag_enabled() const {
 		return playhead_drag_enabled;
+	}
+
+	void TimelineConnectionEditor::set_key_snap_enabled(bool p_enabled) {
+		if (key_snap_enabled == p_enabled) {
+			return;
+		}
+
+		key_snap_enabled = p_enabled;
+		queue_redraw();
+	}
+
+	bool TimelineConnectionEditor::is_key_snap_enabled() const {
+		return key_snap_enabled;
+	}
+
+	void TimelineConnectionEditor::set_center_short_vertical_range(bool p_enabled) {
+		if (center_short_vertical_range == p_enabled) {
+			return;
+		}
+
+		center_short_vertical_range = p_enabled;
+		queue_redraw();
+	}
+
+	bool TimelineConnectionEditor::is_short_vertical_range_centered() const {
+		return center_short_vertical_range;
 	}
 
 	TypedArray<TimelineConnectionPoint> TimelineConnectionEditor::get_selected_points() const {
@@ -1865,6 +2402,15 @@ namespace godot {
 
 	int TimelineConnectionEditor::get_ruler_font_size() const {
 		return ruler_font_size;
+	}
+
+	void TimelineConnectionEditor::set_highlight_zero_tick(bool p_enabled) {
+		highlight_zero_tick = p_enabled;
+		queue_redraw();
+	}
+
+	bool TimelineConnectionEditor::is_highlighting_zero_tick() const {
+		return highlight_zero_tick;
 	}
 
 	void TimelineConnectionEditor::set_ruler_background_color(const Color &p_color) {
@@ -2018,13 +2564,39 @@ namespace godot {
 		return style_cache.handle_scale;
 	}
 
-	void TimelineConnectionEditor::set_handle_style(Ref<StyleBox> p_style) {
-		style_cache.handle = p_style;
+	void TimelineConnectionEditor::set_handle_normal_style(Ref<StyleBox> p_style) {
+		style_cache.handle_normal = p_style;
 		queue_redraw();
 	}
 
+	Ref<StyleBox> TimelineConnectionEditor::get_handle_normal_style() const {
+		return style_cache.handle_normal;
+	}
+
+	void TimelineConnectionEditor::set_handle_selected_style(Ref<StyleBox> p_style) {
+		style_cache.handle_selected = p_style;
+		queue_redraw();
+	}
+
+	Ref<StyleBox> TimelineConnectionEditor::get_handle_selected_style() const {
+		return style_cache.handle_selected;
+	}
+
+	void TimelineConnectionEditor::set_selection_rect_style(Ref<StyleBox> p_style) {
+		style_cache.selection_rect = p_style;
+		queue_redraw();
+	}
+
+	Ref<StyleBox> TimelineConnectionEditor::get_selection_rect_style() const {
+		return style_cache.selection_rect;
+	}
+
+	void TimelineConnectionEditor::set_handle_style(Ref<StyleBox> p_style) {
+		set_handle_normal_style(p_style);
+	}
+
 	Ref<StyleBox> TimelineConnectionEditor::get_handle_style() const {
-		return style_cache.handle;
+		return get_handle_normal_style();
 	}
 
 	void TimelineConnectionEditor::set_handle_line_width(float p_width) {
@@ -2052,6 +2624,15 @@ namespace godot {
 
 	Color TimelineConnectionEditor::get_handle_line_selected_color() const {
 		return style_cache.handle_line_selected_color;
+	}
+
+	void TimelineConnectionEditor::set_zero_tick_color(const Color &p_color) {
+		style_cache.zero_tick_color = p_color;
+		queue_redraw();
+	}
+
+	Color TimelineConnectionEditor::get_zero_tick_color() const {
+		return style_cache.zero_tick_color;
 	}
 
 	void TimelineConnectionEditor::set_bezier_line_width(float p_width) {

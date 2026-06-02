@@ -521,18 +521,12 @@ namespace godot {
 
 
 	float TimelinePanelBase::_get_horizontal_track_header_width() const {
-		float width = 0.0f;
-		for (int64_t i = 0; i < tracks.size(); i++) {
-			Ref<TimelineTrack> track = tracks[i];
-			if (track.is_null()) continue;
-			width = MAX(width, track->get_width());
-		}
-		return width;
+		return MAX(header_height, 0.0f);
 	}
 
 
 	float TimelinePanelBase::_get_horizontal_track_height() const {
-		return MAX(header_height, 1.0f);
+		return 32.0f;
 	}
 
 
@@ -543,7 +537,12 @@ namespace godot {
 
 	float TimelinePanelBase::_calculate_track_span() const {
 		if (panel_orientation == PANEL_ORIENTATION_HORIZONTAL) {
-			return static_cast<float>(tracks.size()) * _get_horizontal_track_height();
+			float height = 0.0f;
+			for (int64_t i = 0; i < tracks.size(); i++) {
+				Ref<TimelineTrack> track = tracks[i];
+				height += track.is_valid() ? track->get_width() : _get_horizontal_track_height();
+			}
+			return height;
 		}
 
 		float width = 0.0f;

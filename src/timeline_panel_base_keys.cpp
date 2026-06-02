@@ -8,14 +8,58 @@
 
 #include <algorithm>
 #include <unordered_set>
+#include <godot_cpp/classes/style_box.hpp>
+#include <godot_cpp/classes/texture2d.hpp>
 #include <godot_cpp/classes/font.hpp>
 #include <godot_cpp/classes/input_event_mouse_button.hpp>
 #include <godot_cpp/classes/input_event_mouse_motion.hpp>
 #include <godot_cpp/classes/input_event_pan_gesture.hpp>
 #include <godot_cpp/classes/style_box_flat.hpp>
 #include <godot_cpp/classes/theme_db.hpp>
+#include <godot_cpp/variant/dictionary.hpp>
 
 namespace godot {
+	namespace {
+		Ref<Texture2D> get_texture_from_variant(const Variant& p_value) {
+			if (p_value.get_type() != Variant::OBJECT) {
+				return Ref<Texture2D>();
+			}
+			Object* object = p_value;
+			Texture2D* texture = Object::cast_to<Texture2D>(object);
+			if (!texture) {
+				return Ref<Texture2D>();
+			}
+			return Ref<Texture2D>(texture);
+		}
+
+		Ref<StyleBox> get_style_box_from_variant(const Variant& p_value) {
+			if (p_value.get_type() != Variant::OBJECT) {
+				return Ref<StyleBox>();
+			}
+			Object* object = p_value;
+			StyleBox* style_box = Object::cast_to<StyleBox>(object);
+			if (!style_box) {
+				return Ref<StyleBox>();
+			}
+			return Ref<StyleBox>(style_box);
+		}
+
+		PackedInt32Array get_packed_int32_array_from_variant(const Variant& p_value) {
+			if (p_value.get_type() == Variant::PACKED_INT32_ARRAY) {
+				return p_value;
+			}
+			PackedInt32Array result;
+			if (p_value.get_type() != Variant::ARRAY) {
+				return result;
+			}
+			Array values = p_value;
+			for (int i = 0; i < values.size(); i++) {
+				result.append(static_cast<int>(values[i]));
+			}
+			return result;
+		}
+	}
+
 	void TimelinePanelBase::_move_key_to_track(TimelineTrackKey* p_key, int p_from_track, int p_to_track) {
 		if (!p_key || p_to_track < 0 || p_to_track >= static_cast<int>(_track_cache.size()) || p_from_track == p_to_track) {
 			return;
@@ -53,6 +97,59 @@ namespace godot {
 	}
 
 
+	TimelineTrackKey *TimelinePanelBase::_duplicate_key_for_drag(TimelineTrackKey *p_key, int p_track_index) {
+		if (!p_key || p_track_index < 0 || p_track_index >= static_cast<int>(_track_cache.size())) {
+			return nullptr;
+		}
+
+		TimelineTrackKey *duplicate_key = memnew(TimelineTrackKey);
+		duplicate_key->set_time_no_signal(p_key->get_time());
+		duplicate_key->set_length_no_signal(p_key->get_length());
+		duplicate_key->set_text(p_key->get_text());
+		duplicate_key->set_icon(p_key->get_icon());
+		duplicate_key->set_icon_max_width(p_key->get_icon_max_width());
+		duplicate_key->set_instant_key_scale(p_key->get_instant_key_scale());
+		duplicate_key->set_instant_key_normal_style(p_key->get_instant_key_normal_style());
+		duplicate_key->set_instant_key_selected_style(p_key->get_instant_key_selected_style());
+		duplicate_key->set_clip_key_normal_style(p_key->get_clip_key_normal_style());
+		duplicate_key->set_clip_key_selected_style(p_key->get_clip_key_selected_style());
+		duplicate_key->set_allowed_track_indices(p_key->get_allowed_track_indices());
+		duplicate_key->set_disabled_no_signal(p_key->is_disabled());
+		duplicate_key->set_selected_no_signal(true);
+
+		Variant metadata = p_key->get_metadata();
+		if (metadata.get_type() == Variant::DICTIONARY) {
+			Dictionary metadata_dictionary = metadata.duplicate(true);
+			metadata_dictionary["timeline_panel_copied"] = true;
+			duplicate_key->set_metadata(metadata_dictionary);
+		}
+		else {
+			duplicate_key->set_metadata(metadata);
+		}
+
+		duplicate_key->connect("changed", callable_mp(this, &TimelinePanelBase::_on_resource_changed));
+		_track_cache[p_track_index].keys.push_back(duplicate_key);
+		_mark_minimap_key_cache_dirty();
+		return duplicate_key;
+	}
+
+
+	void TimelinePanelBase::_remove_drag_duplicate_keys(const std::vector<TimelineTrackKey *> &p_keys) {
+		for (TimelineTrackKey *remove_key : p_keys) {
+			if (!remove_key) continue;
+			for (CachedTrack &ct : _track_cache) {
+				auto it = std::find(ct.keys.begin(), ct.keys.end(), remove_key);
+				if (it == ct.keys.end()) continue;
+
+				ct.keys.erase(it);
+				memdelete(remove_key);
+				break;
+			}
+		}
+		_mark_minimap_key_cache_dirty();
+	}
+
+
 	double TimelinePanelBase::_snap_key_time(double p_time) const {
 		switch (counting_unit) {
 		case FRAME:
@@ -68,6 +165,9 @@ namespace godot {
 		}
 		case TIME:
 		default: {
+			if (key_snap_step > 0.0) {
+				return Math::floor(p_time / key_snap_step + 0.5) * key_snap_step;
+			}
 			double time_interval = 1.0;
 			if (scale >= 64.0f) time_interval = 0.1;
 			else if (scale >= 32.0f) time_interval = 0.5;
@@ -344,6 +444,90 @@ namespace godot {
 		}
 		_mark_minimap_key_cache_dirty();
 		queue_redraw();
+	}
+
+
+	TypedArray<TimelineTrackKey> TimelinePanelBase::replace_track_keys(int p_track_index, const Array& p_key_data, bool p_snap) {
+		TypedArray<TimelineTrackKey> created_keys;
+		ERR_FAIL_INDEX_V(p_track_index, static_cast<int>(_track_cache.size()), created_keys);
+
+		_clear_key_release_preview();
+		CachedTrack& ct = _track_cache[p_track_index];
+		std::vector<TimelineTrackKey*>& keys = ct.keys;
+		for (TimelineTrackKey* key : keys) {
+			if (key) {
+				memdelete(key);
+			}
+		}
+		keys.clear();
+		ct.max_key_length = 0.0;
+		ct.max_instant_key_scale = 0.4f;
+
+		for (int i = 0; i < p_key_data.size(); i++) {
+			Variant key_data_variant = p_key_data[i];
+			if (key_data_variant.get_type() != Variant::DICTIONARY) {
+				continue;
+			}
+			Dictionary key_data = key_data_variant;
+			const double target_time = p_snap || bool(key_data.get("snap", false)) ?
+					_snap_key_time(double(key_data.get("time", 0.0))) :
+					double(key_data.get("time", 0.0));
+			const double length = double(key_data.get("length", 0.0));
+			TimelineTrackKey* key = memnew(TimelineTrackKey);
+			key->set_time_no_signal(target_time);
+			key->set_length_no_signal(length);
+			key->set_text(String(key_data.get("text", String())));
+			key->set_metadata(key_data.get("metadata", Variant()));
+			key->set_disabled_no_signal(bool(key_data.get("disabled", false)));
+			key->set_selected_no_signal(bool(key_data.get("selected", false)));
+
+			if (key_data.has("icon")) {
+				key->set_icon(get_texture_from_variant(key_data.get("icon", Variant())));
+			}
+			if (key_data.has("icon_max_width")) {
+				key->set_icon_max_width(float(key_data.get("icon_max_width", 0.0f)));
+			}
+			if (key_data.has("instant_key_scale")) {
+				key->set_instant_key_scale(float(key_data.get("instant_key_scale", 0.4f)));
+			}
+			if (key_data.has("instant_key_normal")) {
+				key->set_instant_key_normal_style(get_style_box_from_variant(key_data.get("instant_key_normal", Variant())));
+			}
+			if (key_data.has("instant_key_selected")) {
+				key->set_instant_key_selected_style(get_style_box_from_variant(key_data.get("instant_key_selected", Variant())));
+			}
+			if (key_data.has("clip_key_normal")) {
+				key->set_clip_key_normal_style(get_style_box_from_variant(key_data.get("clip_key_normal", Variant())));
+			}
+			if (key_data.has("clip_key_selected")) {
+				key->set_clip_key_selected_style(get_style_box_from_variant(key_data.get("clip_key_selected", Variant())));
+			}
+			if (key_data.has("allowed_track_indices")) {
+				key->set_allowed_track_indices(get_packed_int32_array_from_variant(key_data.get("allowed_track_indices", Variant())));
+			}
+
+			const bool allow_overlap = bool(key_data.get("allow_overlap", false));
+			if (!allow_overlap && _has_key_overlap_in_track(ct, key)) {
+				memdelete(key);
+				continue;
+			}
+
+			key->connect("changed", callable_mp(this, &TimelinePanelBase::_on_resource_changed));
+			auto it = std::lower_bound(keys.begin(), keys.end(), target_time,
+				[](TimelineTrackKey* p_key, double p_time) { return p_key && p_key->get_time() < p_time; });
+			keys.insert(it, key);
+			if (length > ct.max_key_length) {
+				ct.max_key_length = length;
+			}
+			if (length <= 0.0) {
+				ct.max_instant_key_scale = MAX(ct.max_instant_key_scale, _get_instant_key_scale(key));
+			}
+			created_keys.append(key);
+		}
+
+		_mark_minimap_key_cache_dirty();
+		queue_redraw();
+		return created_keys;
 	}
 
 
