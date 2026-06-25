@@ -11,6 +11,7 @@
 #include "components/timeline_marker.h"
 #include "components/timeline_time_ruler.h"
 #include "components/timeline_track.h"
+#include "components/timeline_track_item.h"
 #include "components/timeline_track_key.h"
 #include "style/style_box_arrow.h"
 
@@ -36,6 +37,7 @@ void initialize_timeline_panel_module(ModuleInitializationLevel p_level) {
 	GDREGISTER_CLASS(TimelineMarker);
 	GDREGISTER_CLASS(TimelineTimeRuler);
 	GDREGISTER_CLASS(TimelineTrack);
+	GDREGISTER_CLASS(TimelineTrackItem);
 	GDREGISTER_CLASS(TimelineTrackKey);
 
 	GDREGISTER_CLASS(StyleBoxArrow);

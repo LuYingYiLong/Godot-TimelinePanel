@@ -15,6 +15,7 @@
 #include <godot_cpp/classes/input_event_pan_gesture.hpp>
 #include <godot_cpp/classes/style_box_flat.hpp>
 #include <godot_cpp/classes/theme_db.hpp>
+#include "theme_helpers.h"
 
 namespace {
 	constexpr float INSTANT_KEY_BASE_SIZE = 32.0f;
@@ -23,6 +24,19 @@ namespace {
 namespace godot {
 	void TimelinePanelBase::_notification(int p_what) {
 		switch (p_what) {
+		case NOTIFICATION_THEME_CHANGED: {
+			style_cache.theme_caches_valid = false;
+			style_cache.instant_key_normal_theme = Ref<StyleBox>();
+			style_cache.instant_key_selected_theme = Ref<StyleBox>();
+			style_cache.clip_key_normal_theme = Ref<StyleBox>();
+			style_cache.clip_key_selected_theme = Ref<StyleBox>();
+			style_cache.key_release_preview_theme = Ref<StyleBox>();
+			style_cache.key_allowed_overlap_preview_theme = Ref<StyleBox>();
+			style_cache.selection_rect_theme = Ref<StyleBox>();
+			style_cache.instant_key_scale_theme = -2;
+			queue_redraw();
+		} break;
+
 		case NOTIFICATION_MOUSE_EXIT:
 		case NOTIFICATION_MOUSE_EXIT_SELF: {
 			if (!header_resizing && !middle_mouse_panning && !clip_key_edge_dragging && !key_dragging) {
@@ -66,7 +80,7 @@ namespace godot {
 				break;
 			}
 
-			draw_rect(Rect2(Vector2(0, 0), get_size()), background_color);
+			draw_rect(Rect2(Vector2(0, 0), get_size()), _get_background_color());
 
 			// 先计算 header_width
 			header_width = _calculate_header_width();
@@ -77,10 +91,7 @@ namespace godot {
 			_update_content_height();
 
 			for (int64_t i = 0; i < tracks.size() && i < static_cast<int64_t>(_track_cache.size()); i++) {
-				Ref<TimelineTrack> track = tracks[i];
-				if (track.is_null()) continue;
-
-				const Color track_background = track->get_background();
+				const Color track_background = tracks[i].background;
 				if (track_background.a <= 0.0f) continue;
 
 				const CachedTrack &ct = _track_cache[i];
@@ -115,7 +126,7 @@ namespace godot {
 				float width = time_ruler->get_width();
 				const float separator_x = start_pos.x + width - hscroll_value;
 				if (separator_x >= 0.0f && separator_x <= get_size().x) {
-					draw_line(Point2(separator_x, header_height), Point2(separator_x, get_size().y), separator_color, separator_width);
+					draw_line(Point2(separator_x, header_height), Point2(separator_x, get_size().y), _get_separator_color(), _get_separator_width());
 				}
 				start_pos.x += width;
 			}
@@ -124,7 +135,7 @@ namespace godot {
 
 				const float separator_x = ct.x_offset - hscroll_value + ct.width;
 				if (separator_x < 0.0f || separator_x > get_size().x) continue;
-				draw_line(Point2(separator_x, header_height), Point2(separator_x, get_size().y), separator_color, separator_width);
+				draw_line(Point2(separator_x, header_height), Point2(separator_x, get_size().y), _get_separator_color(), _get_separator_width());
 			}
 
 			// 绘制轨道键
@@ -134,6 +145,8 @@ namespace godot {
 			_get_visible_key_time_range(16.0f, visible_start, visible_end);
 			Ref<StyleBox> key_release_preview_style = _get_key_release_preview_style();
 			std::vector<Rect2> key_release_preview_rects;
+			Ref<StyleBox> key_allowed_overlap_preview_style = _get_key_allowed_overlap_preview_style();
+			std::vector<Rect2> key_allowed_overlap_preview_rects;
 			struct DeferredStyleDraw {
 				Rect2 rect;
 				Ref<StyleBox> style;
@@ -229,7 +242,8 @@ namespace godot {
 						if (!track_cull_rect.intersects(key_rect)) continue;
 
 						const bool release_previewed = _is_key_release_previewed(key);
-						if (!release_previewed) {
+						const bool allowed_overlap_previewed = _is_key_allowed_overlap_previewed(key);
+						if (!release_previewed && !allowed_overlap_previewed) {
 							const int bucket_index = static_cast<int>(Math::floor((key_rect.get_center().y - header_height) / instant_lod_bucket_size));
 							Ref<StyleBox> style = _get_instant_key_normal_style(key);
 							append_instant_key_bucket(instant_key_bucket, key_rect, style, bucket_index);
@@ -257,6 +271,9 @@ namespace godot {
 						if (release_previewed) {
 							key_release_preview_rects.push_back(key_rect);
 						}
+						else if (allowed_overlap_previewed) {
+							key_allowed_overlap_preview_rects.push_back(key_rect);
+						}
 					}
 					else {
 						flush_instant_key_bucket();
@@ -282,6 +299,9 @@ namespace godot {
 						if (_is_key_release_previewed(key)) {
 							key_release_preview_rects.push_back(bar_rect);
 						}
+						else if (_is_key_allowed_overlap_previewed(key)) {
+							key_allowed_overlap_preview_rects.push_back(bar_rect);
+						}
 					}
 				}
 				flush_instant_key_bucket();
@@ -294,11 +314,19 @@ namespace godot {
 				}
 			}
 
+			if (key_allowed_overlap_preview_style.is_valid()) {
+				for (const Rect2& preview_rect : key_allowed_overlap_preview_rects) {
+					draw_style_box(key_allowed_overlap_preview_style, preview_rect);
+				}
+			}
+
 			if (key_release_preview_style.is_valid()) {
 				for (const Rect2 &preview_rect : key_release_preview_rects) {
 					draw_style_box(key_release_preview_style, preview_rect);
 				}
 			}
+
+			_draw_key_projections(key_cull_rect);
 
 			// 绘制指示器
 			if (time_ruler.is_valid()) {
@@ -350,7 +378,7 @@ namespace godot {
 			if (selecting || right_selecting) {
 				Rect2 sel_rect = selecting ? _make_selection_rect(select_start, select_end) : _make_selection_rect(right_select_start, right_select_end);
 
-				Ref<StyleBox> style = get_selection_rect_style();
+				Ref<StyleBox> style = _get_selection_rect_style();
 				if (style.is_valid()) {
 					draw_style_box(style, sel_rect);
 				}
@@ -371,21 +399,16 @@ namespace godot {
 				}
 			}
 			for (int64_t i = 0; i < tracks.size() && i < static_cast<int64_t>(_track_cache.size()); i++) {
-				Ref<TimelineTrack> track = tracks[i];
-				if (track.is_null()) continue;
-
 				const CachedTrack &ct = _track_cache[i];
 				if (ct.width <= 0.0f) continue;
 
 				float x = ct.x_offset - hscroll_value;
 				if (x + ct.width < 0.0f || x > get_size().x) continue;
 
-				Ref<StyleBox> header_background = track->get_header_background();
-				Ref<Texture2D> header_icon = track->get_header_icon();
-				_draw_header(Point2(x, 0.0f), ct.width, header_background, header_icon, track->get_text(), track->get_header_indent());
+				_draw_track_header_rect(static_cast<int>(i), Rect2(Vector2(x, 0.0f), Vector2(ct.width, header_height)));
 			}
 
-			draw_line(Point2(header_width - hscroll_value, header_height), Point2(header_width - hscroll_value, get_size().y), separator_color, separator_width);
+			draw_line(Point2(header_width - hscroll_value, header_height), Point2(header_width - hscroll_value, get_size().y), _get_separator_color(), _get_separator_width());
 			_draw_minimap();
 		} break;
 		}
@@ -432,6 +455,88 @@ namespace godot {
 				const float baseline = p_rect.position.y + (p_rect.size.y - static_cast<float>(font_size)) * 0.5f + static_cast<float>(font_size);
 				if (text_width > 0.0f) {
 					draw_string(font, Point2(text_left, baseline), p_text, HORIZONTAL_ALIGNMENT_LEFT, text_width, font_size, Color(1.0f, 1.0f, 1.0f, 0.88f));
+				}
+			}
+		}
+	}
+
+
+	void TimelinePanelBase::_draw_track_header_rect(int p_track_index, const Rect2 &p_rect) {
+		if (p_track_index < 0 || p_track_index >= static_cast<int>(tracks.size())) {
+			return;
+		}
+
+		const TrackData &track = tracks[p_track_index];
+		if (track.header_background.is_valid()) {
+			draw_style_box(track.header_background, p_rect);
+		}
+
+		if (panel_orientation == PANEL_ORIENTATION_HORIZONTAL) {
+			const int column_count = MAX(header_column_count, 1);
+			for (int column = 0; column < column_count; column++) {
+				const TrackHeaderColumn *header_column = _get_track_column(track, column);
+				if (header_column == nullptr) {
+					continue;
+				}
+				_draw_header_cell(_get_header_column_rect(p_rect, column), track, *header_column, column);
+			}
+			return;
+		}
+
+		const TrackHeaderColumn *column = _get_track_column(track, 0);
+		if (column != nullptr) {
+			_draw_header_cell(p_rect, track, *column, 0);
+		}
+	}
+
+
+	void TimelinePanelBase::_draw_header_cell(const Rect2 &p_rect, const TrackData &p_track, const TrackHeaderColumn &p_column, int p_column_index) {
+		const bool has_text = !p_column.text.is_empty();
+		const float padding = has_text ? 4.0f : 0.0f;
+		const float indent = p_column_index == 0 && has_text ? MAX(p_track.header_indent, 0.0f) : 0.0f;
+		float reserved_button_width = 0.0f;
+
+		for (int button_index = 0; button_index < static_cast<int>(p_column.buttons.size()); button_index++) {
+			const Rect2 button_rect = _get_track_header_button_rect(p_rect, button_index);
+			if (button_rect.position.x < p_rect.position.x) {
+				continue;
+			}
+			const TrackHeaderButton &button = p_column.buttons[button_index];
+			if (button.icon.is_valid()) {
+				const Color modulate = button.disabled ? Color(1.0f, 1.0f, 1.0f, 0.32f) : Color(1.0f, 1.0f, 1.0f, 0.9f);
+				draw_texture_rect(button.icon, button_rect, false, modulate);
+			}
+			reserved_button_width = MAX(reserved_button_width, p_rect.position.x + p_rect.size.x - button_rect.position.x);
+		}
+
+		const float content_left = p_rect.position.x + indent;
+		const float content_right = p_rect.position.x + p_rect.size.x - reserved_button_width;
+		const float max_icon_width = MAX(content_right - content_left - padding * 2.0f, 0.0f);
+		const float max_icon_height = MAX(p_rect.size.y, 0.0f);
+		float text_left = content_left + padding;
+		if (p_column.icon.is_valid() && max_icon_width > 0.0f && max_icon_height > 0.0f) {
+			Size2 tex_size = p_column.icon->get_size();
+			if (tex_size.x > 0.0f && tex_size.y > 0.0f) {
+				const float max_icon_size = has_text ? MIN(MIN(max_icon_width, max_icon_height), 18.0f) : MIN(max_icon_width, max_icon_height);
+				if (max_icon_size > 0.0f) {
+					const float scale = MIN(max_icon_size / tex_size.x, max_icon_size / tex_size.y);
+					const Size2 scaled_tex_size = tex_size * scale;
+					const float icon_x = has_text ? content_left + padding : p_rect.position.x + (p_rect.size.x - scaled_tex_size.x) * 0.5f;
+					const float icon_y = p_rect.position.y + (p_rect.size.y - scaled_tex_size.y) * 0.5f;
+					draw_texture_rect(p_column.icon, Rect2(Point2(icon_x, icon_y), scaled_tex_size), false);
+					text_left = icon_x + scaled_tex_size.x + padding;
+				}
+			}
+		}
+
+		if (has_text) {
+			const Ref<Font> font = ThemeDB::get_singleton()->get_fallback_font();
+			if (font.is_valid()) {
+				const int font_size = 12;
+				const float text_width = MAX(content_right - padding - text_left, 0.0f);
+				const float baseline = p_rect.position.y + (p_rect.size.y - static_cast<float>(font_size)) * 0.5f + static_cast<float>(font_size);
+				if (text_width > 0.0f) {
+					draw_string(font, Point2(text_left, baseline), p_column.text, HORIZONTAL_ALIGNMENT_LEFT, text_width, font_size, Color(1.0f, 1.0f, 1.0f, 0.88f));
 				}
 			}
 		}

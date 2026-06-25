@@ -8,6 +8,7 @@
 
 #include <godot_cpp/classes/font.hpp>
 #include <godot_cpp/classes/theme_db.hpp>
+#include "theme_helpers.h"
 
 namespace godot {
 	void TimelinePanelBase::_draw_horizontal_grid() {
@@ -147,7 +148,7 @@ namespace godot {
 	}
 
 	void TimelinePanelBase::_draw_horizontal_panel() {
-		draw_rect(Rect2(Vector2(0, 0), get_size()), background_color);
+		draw_rect(Rect2(Vector2(0, 0), get_size()), _get_background_color());
 
 		header_width = _calculate_header_width();
 		content_width = header_width;
@@ -163,10 +164,7 @@ namespace godot {
 		const float indicator_line_length = MAX(indicator_line_bottom - ruler_height * 0.5f, 0.0f);
 
 		for (int64_t i = 0; i < tracks.size() && i < static_cast<int64_t>(_track_cache.size()); i++) {
-			Ref<TimelineTrack> track = tracks[i];
-			if (track.is_null()) continue;
-
-			const Color track_background = track->get_background();
+			const Color track_background = tracks[i].background;
 			if (track_background.a <= 0.0f) continue;
 
 			const CachedTrack &ct = _track_cache[i];
@@ -181,17 +179,16 @@ namespace godot {
 		_draw_horizontal_grid();
 
 		for (int64_t i = 0; i < tracks.size() && i < static_cast<int64_t>(_track_cache.size()); i++) {
-			Ref<TimelineTrack> track = tracks[i];
-			if (track.is_null() || !track->get_header_background_fill_track()) continue;
+			const TrackData &track = tracks[i];
+			if (!track.header_background_fill_track) continue;
 
 			const CachedTrack &ct = _track_cache[i];
 			if (ct.width <= 0.0f) continue;
 			const float y = ruler_height + ct.x_offset - vscroll_value;
 			if (y + ct.width < ruler_height || y > get_size().y) continue;
 
-			Ref<StyleBox> header_background = track->get_header_background();
-			if (header_background.is_valid()) {
-				draw_style_box(header_background, Rect2(Vector2(0.0f, y), Vector2(get_size().x, ct.width)));
+			if (track.header_background.is_valid()) {
+				draw_style_box(track.header_background, Rect2(Vector2(0.0f, y), Vector2(get_size().x, ct.width)));
 			}
 		}
 
@@ -208,6 +205,8 @@ namespace godot {
 		Rect2 key_cull_rect(Vector2(header_left, ruler_height), Vector2(MAX(get_size().x - header_left, 0.0f), MAX(get_size().y - ruler_height, 0.0f)));
 		Ref<StyleBox> key_release_preview_style = _get_key_release_preview_style();
 		std::vector<Rect2> key_release_preview_rects;
+		Ref<StyleBox> key_allowed_overlap_preview_style = _get_key_allowed_overlap_preview_style();
+		std::vector<Rect2> key_allowed_overlap_preview_rects;
 		struct DeferredStyleDraw {
 			Rect2 rect;
 			Ref<StyleBox> style;
@@ -246,6 +245,9 @@ namespace godot {
 				if (_is_key_release_previewed(key)) {
 					key_release_preview_rects.push_back(key_rect);
 				}
+				else if (_is_key_allowed_overlap_previewed(key)) {
+					key_allowed_overlap_preview_rects.push_back(key_rect);
+				}
 			}
 		}
 
@@ -255,11 +257,19 @@ namespace godot {
 			}
 		}
 
+		if (key_allowed_overlap_preview_style.is_valid()) {
+			for (const Rect2& preview_rect : key_allowed_overlap_preview_rects) {
+				draw_style_box(key_allowed_overlap_preview_style, preview_rect);
+			}
+		}
+
 		if (key_release_preview_style.is_valid()) {
 			for (const Rect2 &preview_rect : key_release_preview_rects) {
 				draw_style_box(key_release_preview_style, preview_rect);
 			}
 		}
+
+		_draw_key_projections(key_cull_rect);
 
 		TypedArray<TimelineIndicator> all_indicators;
 		if (time_ruler.is_valid()) {
@@ -287,15 +297,12 @@ namespace godot {
 		}
 
 		for (int64_t i = 0; i < tracks.size() && i < static_cast<int64_t>(_track_cache.size()); i++) {
-			Ref<TimelineTrack> track = tracks[i];
-			if (track.is_null()) continue;
-
 			const CachedTrack &ct = _track_cache[i];
 			if (ct.width <= 0.0f) continue;
 			const float y = ruler_height + ct.x_offset - vscroll_value;
 			if (y + ct.width < ruler_height || y > get_size().y) continue;
 
-			_draw_header_rect(Rect2(Vector2(0.0f, y), Vector2(_get_horizontal_track_header_width(), ct.width)), track->get_header_background(), track->get_header_icon(), track->get_text(), track->get_header_indent());
+			_draw_track_header_rect(static_cast<int>(i), Rect2(Vector2(0.0f, y), Vector2(_get_horizontal_track_header_width(), ct.width)));
 		}
 
 		if (time_ruler.is_valid()) {
@@ -324,7 +331,7 @@ namespace godot {
 
 		if (selecting || right_selecting) {
 			Rect2 sel_rect = selecting ? _make_selection_rect(select_start, select_end) : _make_selection_rect(right_select_start, right_select_end);
-			Ref<StyleBox> style = get_selection_rect_style();
+			Ref<StyleBox> style = _get_selection_rect_style();
 			if (style.is_valid()) {
 				draw_style_box(style, sel_rect);
 			}

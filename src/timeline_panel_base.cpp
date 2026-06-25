@@ -15,6 +15,8 @@
 #include <godot_cpp/classes/style_box_flat.hpp>
 #include <godot_cpp/classes/theme_db.hpp>
 
+#include "theme_helpers.h"
+
 namespace {
 	constexpr float INSTANT_KEY_BASE_SIZE = 32.0f;
 }
@@ -40,13 +42,22 @@ namespace godot {
 		BIND_ENUM_CONSTANT(SCROLL_MODE_SHOW_NEVER);
 		BIND_ENUM_CONSTANT(SCROLL_MODE_RESERVE);
 
-		ClassDB::bind_method(D_METHOD("create_key", "track_index", "time", "length", "snap"), &TimelinePanelBase::create_key, DEFVAL(0.0f), DEFVAL(false));
+		ClassDB::bind_method(D_METHOD("create_key", "track_index", "time", "length", "snap", "metadata"), &TimelinePanelBase::create_key, DEFVAL(0.0f), DEFVAL(false), DEFVAL(Variant()));
 		ClassDB::bind_method(D_METHOD("remove_key", "track_index", "key_index"), &TimelinePanelBase::remove_key);
+		ClassDB::bind_method(D_METHOD("remove_keys", "keys"), &TimelinePanelBase::remove_keys);
 		ClassDB::bind_method(D_METHOD("clear_track_keys", "track_index"), &TimelinePanelBase::clear_track_keys);
 		ClassDB::bind_method(D_METHOD("clear_all_keys"), &TimelinePanelBase::clear_all_keys);
 		ClassDB::bind_method(D_METHOD("replace_track_keys", "track_index", "key_data", "snap"), &TimelinePanelBase::replace_track_keys, DEFVAL(false));
 		ClassDB::bind_method(D_METHOD("get_key_count"), &TimelinePanelBase::get_key_count);
 		ClassDB::bind_method(D_METHOD("get_key", "track_index", "key_index"), &TimelinePanelBase::get_key);
+		ClassDB::bind_method(D_METHOD("get_key_track_index", "key"), &TimelinePanelBase::get_key_track_index);
+		ClassDB::bind_method(D_METHOD("get_key_rect", "track_index", "key"), &TimelinePanelBase::get_key_rect);
+		ClassDB::bind_method(D_METHOD("get_keys_in_rect", "rect"), &TimelinePanelBase::get_keys_in_rect);
+		ClassDB::bind_method(D_METHOD("find_keys", "track_index", "start_time", "end_time"), &TimelinePanelBase::find_keys);
+		ClassDB::bind_method(D_METHOD("get_selection_rect_style"), &TimelinePanelBase::_get_selection_rect_style);
+		ClassDB::bind_method(D_METHOD("set_key_overlap_preview", "keys"), &TimelinePanelBase::set_key_overlap_preview);
+		ClassDB::bind_method(D_METHOD("set_key_projections", "projections"), &TimelinePanelBase::set_key_projections);
+		ClassDB::bind_method(D_METHOD("is_key_allowed_overlap_previewed", "key"), &TimelinePanelBase::_is_key_allowed_overlap_previewed);
 
 		ClassDB::bind_method(D_METHOD("get_time_from_position", "position"), &TimelinePanelBase::get_time_from_position);
 		ClassDB::bind_method(D_METHOD("get_frame_from_position", "position"), &TimelinePanelBase::get_frame_from_position);
@@ -58,9 +69,22 @@ namespace godot {
 		ClassDB::bind_method(D_METHOD("get_h_scroll_bar"), &TimelinePanelBase::get_h_scroll_bar);
 		ClassDB::bind_method(D_METHOD("get_v_scroll_bar"), &TimelinePanelBase::get_v_scroll_bar);
 
-		ClassDB::bind_method(D_METHOD("set_background_color", "background_color"), &TimelinePanelBase::set_background_color);
-		ClassDB::bind_method(D_METHOD("get_background_color"), &TimelinePanelBase::get_background_color);
-		ADD_PROPERTY(PropertyInfo(Variant::COLOR, "background_color"), "set_background_color", "get_background_color");
+		ClassDB::bind_method(D_METHOD("create_track", "index"), &TimelinePanelBase::create_track, DEFVAL(-1));
+		ClassDB::bind_method(D_METHOD("remove_track", "track"), &TimelinePanelBase::remove_track);
+		ClassDB::bind_method(D_METHOD("clear_tracks"), &TimelinePanelBase::clear_tracks);
+		ClassDB::bind_method(D_METHOD("get_track", "index"), &TimelinePanelBase::get_track);
+		ClassDB::bind_method(D_METHOD("get_track_count"), &TimelinePanelBase::get_track_count);
+		ClassDB::bind_method(D_METHOD("get_track_index", "track"), &TimelinePanelBase::get_track_index);
+
+		ClassDB::bind_method(D_METHOD("set_header_column_count", "count"), &TimelinePanelBase::set_header_column_count);
+		ClassDB::bind_method(D_METHOD("get_header_column_count"), &TimelinePanelBase::get_header_column_count);
+		ADD_PROPERTY(PropertyInfo(Variant::INT, "header_column_count", PROPERTY_HINT_RANGE, "1,64,1,or_greater"), "set_header_column_count", "get_header_column_count");
+
+		ClassDB::bind_method(D_METHOD("set_header_column_width", "column", "width"), &TimelinePanelBase::set_header_column_width);
+		ClassDB::bind_method(D_METHOD("get_header_column_width", "column"), &TimelinePanelBase::get_header_column_width);
+
+		ClassDB::bind_method(D_METHOD("set_tracks", "tracks"), &TimelinePanelBase::set_tracks);
+		ClassDB::bind_method(D_METHOD("get_tracks"), &TimelinePanelBase::get_tracks);
 
 		ClassDB::bind_method(D_METHOD("set_header_width", "header_width"), &TimelinePanelBase::set_header_width);
 		ClassDB::bind_method(D_METHOD("get_header_width"), &TimelinePanelBase::get_header_width);
@@ -113,21 +137,9 @@ namespace godot {
 		ClassDB::bind_method(D_METHOD("get_beat_per_bar"), &TimelinePanelBase::get_beat_per_bar);
 		ADD_PROPERTY(PropertyInfo(Variant::INT, "beat_per_bar"), "set_beat_per_bar", "get_beat_per_bar");
 
-		ClassDB::bind_method(D_METHOD("set_beat_line_color", "color"), &TimelinePanelBase::set_beat_line_color);
-		ClassDB::bind_method(D_METHOD("get_beat_line_color"), &TimelinePanelBase::get_beat_line_color);
-		ADD_PROPERTY(PropertyInfo(Variant::COLOR, "beat_line_color"), "set_beat_line_color", "get_beat_line_color");
 
-		ClassDB::bind_method(D_METHOD("set_beat_line_width", "width"), &TimelinePanelBase::set_beat_line_width);
-		ClassDB::bind_method(D_METHOD("get_beat_line_width"), &TimelinePanelBase::get_beat_line_width);
-		ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "beat_line_width"), "set_beat_line_width", "get_beat_line_width");
 
-		ClassDB::bind_method(D_METHOD("set_bar_line_color", "color"), &TimelinePanelBase::set_bar_line_color);
-		ClassDB::bind_method(D_METHOD("get_bar_line_color"), &TimelinePanelBase::get_bar_line_color);
-		ADD_PROPERTY(PropertyInfo(Variant::COLOR, "bar_line_color"), "set_bar_line_color", "get_bar_line_color");
 
-		ClassDB::bind_method(D_METHOD("set_bar_line_width", "width"), &TimelinePanelBase::set_bar_line_width);
-		ClassDB::bind_method(D_METHOD("get_bar_line_width"), &TimelinePanelBase::get_bar_line_width);
-		ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "bar_line_width"), "set_bar_line_width", "get_bar_line_width");
 
 		ClassDB::bind_method(D_METHOD("set_bar_number_direction", "direction"), &TimelinePanelBase::set_bar_number_direction);
 		ClassDB::bind_method(D_METHOD("get_bar_number_direction"), &TimelinePanelBase::get_bar_number_direction);
@@ -139,13 +151,7 @@ namespace godot {
 		ADD_GROUP("", "");
 
 		ADD_GROUP("Separator", "separator_");
-		ClassDB::bind_method(D_METHOD("set_separator_color", "separator_color"), &TimelinePanelBase::set_separator_color);
-		ClassDB::bind_method(D_METHOD("get_separator_color"), &TimelinePanelBase::get_separator_color);
-		ADD_PROPERTY(PropertyInfo(Variant::COLOR, "separator_color"), "set_separator_color", "get_separator_color");
 
-		ClassDB::bind_method(D_METHOD("set_separator_width", "separator_width"), &TimelinePanelBase::set_separator_width);
-		ClassDB::bind_method(D_METHOD("get_separator_width"), &TimelinePanelBase::get_separator_width);
-		ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "separator_width"), "set_separator_width", "get_separator_width");
 		ADD_GROUP("", "");
 
 		ADD_GROUP("Components", "component_");
@@ -160,10 +166,6 @@ namespace godot {
 		ClassDB::bind_method(D_METHOD("set_time_ruler", "time_ruler"), &TimelinePanelBase::set_time_ruler);
 		ClassDB::bind_method(D_METHOD("get_time_ruler"), &TimelinePanelBase::get_time_ruler);
 		ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "component_time_ruler", PROPERTY_HINT_RESOURCE_TYPE, "TimelineTimeRuler"), "set_time_ruler", "get_time_ruler");
-
-		ClassDB::bind_method(D_METHOD("set_tracks", "tracks"), &TimelinePanelBase::set_tracks);
-		ClassDB::bind_method(D_METHOD("get_tracks"), &TimelinePanelBase::get_tracks);
-		ADD_PROPERTY(PropertyInfo(Variant::ARRAY, "component_track", PROPERTY_HINT_ARRAY_TYPE, "TimelineTrack", PROPERTY_USAGE_DEFAULT | PROPERTY_USAGE_EDITOR_INSTANTIATE_OBJECT), "set_tracks", "get_tracks");
 
 		ADD_GROUP("Scrollbar", "");
 		ClassDB::bind_method(D_METHOD("set_h_scroll", "value"), &TimelinePanelBase::set_h_scroll);
@@ -239,41 +241,7 @@ namespace godot {
 
 		GDVIRTUAL_BIND(_should_handle_selection_rect, "rect", "keys", "mouse_button");
 		GDVIRTUAL_BIND(_handle_selection_rect, "rect", "keys", "mouse_button");
-
-		ADD_GROUP("Style overrides", "");
-		ADD_SUBGROUP("Constants", "");
-		ClassDB::bind_method(D_METHOD("set_icon_max_width", "width"), &TimelinePanelBase::set_icon_max_width);
-		ClassDB::bind_method(D_METHOD("get_icon_max_width"), &TimelinePanelBase::get_icon_max_width);
-		ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "icon_max_width"), "set_icon_max_width", "get_icon_max_width");
-
-		ClassDB::bind_method(D_METHOD("set_instant_key_scale", "scale"), &TimelinePanelBase::set_instant_key_scale);
-		ClassDB::bind_method(D_METHOD("get_instant_key_scale"), &TimelinePanelBase::get_instant_key_scale);
-		ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "instant_key_scale"), "set_instant_key_scale", "get_instant_key_scale");
-
-		ADD_SUBGROUP("Styles", "");
-		ClassDB::bind_method(D_METHOD("set_instant_key_normal_style", "style"), &TimelinePanelBase::set_instant_key_normal_style);
-		ClassDB::bind_method(D_METHOD("get_instant_key_normal_style"), &TimelinePanelBase::get_instant_key_normal_style);
-		ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "instant_key_normal", PROPERTY_HINT_RESOURCE_TYPE, "StyleBox"), "set_instant_key_normal_style", "get_instant_key_normal_style");
-
-		ClassDB::bind_method(D_METHOD("set_instant_key_selected_style", "style"), &TimelinePanelBase::set_instant_key_selected_style);
-		ClassDB::bind_method(D_METHOD("get_instant_key_selected_style"), &TimelinePanelBase::get_instant_key_selected_style);
-		ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "instant_key_selected", PROPERTY_HINT_RESOURCE_TYPE, "StyleBox"), "set_instant_key_selected_style", "get_instant_key_selected_style");
-
-		ClassDB::bind_method(D_METHOD("set_clip_key_normal_style", "style"), &TimelinePanelBase::set_clip_key_normal_style);
-		ClassDB::bind_method(D_METHOD("get_clip_key_normal_style"), &TimelinePanelBase::get_clip_key_normal_style);
-		ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "clip_key_normal", PROPERTY_HINT_RESOURCE_TYPE, "StyleBox"), "set_clip_key_normal_style", "get_clip_key_normal_style");
-
-		ClassDB::bind_method(D_METHOD("set_selection_rect_style", "style"), &TimelinePanelBase::set_selection_rect_style);
-		ClassDB::bind_method(D_METHOD("get_selection_rect_style"), &TimelinePanelBase::get_selection_rect_style);
-		ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "selection_rect", PROPERTY_HINT_RESOURCE_TYPE, "StyleBox"), "set_selection_rect_style", "get_selection_rect_style");
-
-		ClassDB::bind_method(D_METHOD("set_clip_key_selected_style", "style"), &TimelinePanelBase::set_clip_key_selected_style);
-		ClassDB::bind_method(D_METHOD("get_clip_key_selected_style"), &TimelinePanelBase::get_clip_key_selected_style);
-		ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "clip_key_selected", PROPERTY_HINT_RESOURCE_TYPE, "StyleBox"), "set_clip_key_selected_style", "get_clip_key_selected_style");
-
-		ClassDB::bind_method(D_METHOD("set_key_release_preview_style", "style"), &TimelinePanelBase::set_key_release_preview_style);
-		ClassDB::bind_method(D_METHOD("get_key_release_preview_style"), &TimelinePanelBase::get_key_release_preview_style);
-		ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "key_release_preview", PROPERTY_HINT_RESOURCE_TYPE, "StyleBox"), "set_key_release_preview_style", "get_key_release_preview_style");
+		GDVIRTUAL_BIND(_is_key_overlap_allowed, "key_a", "key_b");
 
 		ADD_SIGNAL(MethodInfo("scroll_started"));
 		ADD_SIGNAL(MethodInfo("scroll_ended"));
@@ -282,6 +250,21 @@ namespace godot {
 			PropertyInfo(Variant::ARRAY, "keys", PROPERTY_HINT_ARRAY_TYPE, "TimelineTrackKey")));
 		ADD_SIGNAL(MethodInfo("time_ruler_right_clicked",
 			PropertyInfo(Variant::FLOAT, "time"),
+			PropertyInfo(Variant::VECTOR2, "position")));
+		ADD_SIGNAL(MethodInfo("track_header_clicked",
+			PropertyInfo(Variant::INT, "track_index"),
+			PropertyInfo(Variant::INT, "column"),
+			PropertyInfo(Variant::VECTOR2, "position")));
+		ADD_SIGNAL(MethodInfo("track_header_right_clicked",
+			PropertyInfo(Variant::INT, "track_index"),
+			PropertyInfo(Variant::INT, "column"),
+			PropertyInfo(Variant::VECTOR2, "position")));
+		ADD_SIGNAL(MethodInfo("track_header_button_clicked",
+			PropertyInfo(Variant::INT, "track_index"),
+			PropertyInfo(Variant::INT, "column"),
+			PropertyInfo(Variant::INT, "button_id"),
+			PropertyInfo(Variant::INT, "button_index"),
+			PropertyInfo(Variant::INT, "mouse_button"),
 			PropertyInfo(Variant::VECTOR2, "position")));
 	}
 
@@ -324,6 +307,7 @@ namespace godot {
 	}
 
 	TimelinePanelBase::TimelinePanelBase() {
+		set_theme_type_variation("TimelinePanel");
 		set_clip_contents(true);
 
 		hscroll = memnew(HScrollBar);
@@ -384,11 +368,29 @@ namespace godot {
 		key_release_preview->set_corner_radius_all(4);
 		style_cache.key_release_preview_fallback = key_release_preview;
 
+		Ref<StyleBoxFlat> key_allowed_overlap_preview;
+		key_allowed_overlap_preview.instantiate();
+		key_allowed_overlap_preview->set_bg_color(Color(0.12f, 0.9f, 0.55f, 0.22f));
+		key_allowed_overlap_preview->set_border_width_all(2);
+		key_allowed_overlap_preview->set_border_color(Color(0.12f, 0.9f, 0.55f, 0.9f));
+		key_allowed_overlap_preview->set_corner_detail(4);
+		key_allowed_overlap_preview->set_corner_radius_all(4);
+		style_cache.key_allowed_overlap_preview_fallback = key_allowed_overlap_preview;
+
 		add_child(vscroll, false, INTERNAL_MODE_FRONT);
 	}
 
 	TimelinePanelBase::~TimelinePanelBase() {
 		clear_all_keys();
+		for (TrackData &track : tracks) {
+			if (track.item != nullptr) {
+				track.item->_unbind_owner();
+				memdelete(track.item);
+				track.item = nullptr;
+			}
+		}
+		tracks.clear();
+		_track_cache.clear();
 	}
 
 }

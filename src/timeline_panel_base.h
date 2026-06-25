@@ -1,6 +1,7 @@
 #ifndef TIMELINE_PANEL_BASE_H
 #define TIMELINE_PANEL_BASE_H
 
+#include "components/timeline_track_item.h"
 #include "components/timeline_track_key.h"
 
 #include <godot_cpp/classes/control.hpp>
@@ -9,6 +10,7 @@
 #include <godot_cpp/classes/v_scroll_bar.hpp>
 #include <godot_cpp/core/binder_common.hpp>
 #include <godot_cpp/core/gdvirtual.gen.inc>
+#include <godot_cpp/core/object_id.hpp>
 #include <godot_cpp/variant/array.hpp>
 #include <cstdint>
 #include <unordered_set>
@@ -19,6 +21,7 @@ namespace godot {
 	class TimelineMarker;
 	class TimelineTimeRuler;
 	class TimelineTrack;
+	class TimelineTrackItem;
 	class TimelineTrackKey;
 
 	class TimelinePanelBase : public Control {
@@ -98,7 +101,36 @@ namespace godot {
 		Ref<TimelineIndicator> playhead;
 		TypedArray<TimelineMarker> markers;
 		Ref<TimelineTimeRuler> time_ruler;
-		TypedArray<TimelineTrack> tracks;
+
+		struct TrackHeaderButton {
+			Ref<Texture2D> icon;
+			int id = -1;
+			bool disabled = false;
+			String tooltip_text;
+		};
+
+		struct TrackHeaderColumn {
+			String text;
+			Ref<Texture2D> icon;
+			String tooltip_text;
+			std::vector<TrackHeaderButton> buttons;
+		};
+
+		struct TrackData {
+			uint64_t id = 0;
+			TimelineTrackItem *item = nullptr;
+			float height = 32.0f;
+			Color background = Color(0.0f, 0.0f, 0.0f, 0.0f);
+			Ref<StyleBox> header_background;
+			bool header_background_fill_track = false;
+			float header_indent = 0.0f;
+			std::vector<TrackHeaderColumn> columns;
+		};
+
+		std::vector<TrackData> tracks;
+		uint64_t next_track_id = 1;
+		int header_column_count = 1;
+		std::vector<float> header_column_widths;
 
 		float hscroll_value = 0.0f;
 		float vscroll_value = 0.0f;
@@ -219,6 +251,7 @@ namespace godot {
 		};
 		std::vector<ResizedClipKey> resized_clip_keys;
 		std::unordered_set<const TimelineTrackKey *> key_release_preview_keys;
+		std::unordered_set<const TimelineTrackKey *> key_allowed_overlap_preview_keys;
 
 		bool playhead_dragging = false;
 
@@ -256,12 +289,16 @@ namespace godot {
 		void _move_key_to_track(TimelineTrackKey* p_key, int p_from_track, int p_to_track);
 		bool _can_move_key_to_track(const TimelineTrackKey* p_key, int p_track_index) const;
 		double _snap_key_time(double p_time) const;
+		bool _is_key_overlap_permitted(const TimelineTrackKey* p_a, const TimelineTrackKey* p_b) const;
+		bool _keys_intersect(const TimelineTrackKey* p_a, const TimelineTrackKey* p_b) const;
+		bool _keys_intersect_inclusive(const TimelineTrackKey* p_a, const TimelineTrackKey* p_b) const;
 		bool _keys_overlap(const TimelineTrackKey* p_a, const TimelineTrackKey* p_b) const;
 		bool _has_key_overlap_in_track(const CachedTrack &p_track, const TimelineTrackKey *p_key) const;
 		std::vector<TimelineTrackKey *> _get_moved_key_overlaps(const std::vector<TimelineTrackKey *> &p_moved_keys) const;
 		void _update_key_release_preview(const std::vector<TimelineTrackKey *> &p_moved_keys);
 		void _clear_key_release_preview();
 		bool _is_key_release_previewed(const TimelineTrackKey *p_key) const;
+		bool _is_key_allowed_overlap_previewed(const TimelineTrackKey* p_key) const;
 		void _destroy_moved_key_overlaps(const std::vector<TimelineTrackKey*>& p_moved_keys);
 
 		void _scroll(ScrollBar* p_scroll, double p_amount);
@@ -274,6 +311,8 @@ namespace godot {
 
 		void _draw_header(const Point2 &pos, const float width, Ref<StyleBox> header_bg, Ref<Texture2D> header_icon, const String &p_text = String(), float p_indent = 0.0f);
 		void _draw_header_rect(const Rect2 &p_rect, Ref<StyleBox> p_header_bg, Ref<Texture2D> p_header_icon, const String &p_text = String(), float p_indent = 0.0f);
+		void _draw_track_header_rect(int p_track_index, const Rect2 &p_rect);
+		void _draw_header_cell(const Rect2 &p_rect, const TrackData &p_track, const TrackHeaderColumn &p_column, int p_column_index);
 		void _draw_horizontal_panel();
 		void _draw_horizontal_grid();
 		void _draw_horizontal_time_ruler_ticks();
@@ -329,9 +368,24 @@ namespace godot {
 			float max_instant_key_scale = 0.4f;
 		};
 		std::vector<CachedTrack> _track_cache;
+		struct KeyProjection {
+			ObjectID key_id;
+			int track_index = -1;
+			Ref<StyleBox> style;
+		};
+		std::vector<KeyProjection> key_projections;
 		void _rebuild_track_cache();
 		void _sync_track_cache_geometry();
 		void _refresh_track_key_metrics();
+		TrackData *_get_track_data(TimelineTrackItem *p_item, uint64_t p_track_id);
+		const TrackData *_get_track_data(const TimelineTrackItem *p_item, uint64_t p_track_id) const;
+		TrackHeaderColumn &_ensure_track_column(TrackData &p_track, int p_column);
+		const TrackHeaderColumn *_get_track_column(const TrackData &p_track, int p_column) const;
+		float _get_header_column_width(int p_column, float p_total_width) const;
+		Rect2 _get_header_column_rect(const Rect2 &p_header_rect, int p_column) const;
+		bool _find_track_header_button_at_position(const Vector2 &p_position, int &r_track_index, int &r_column, int &r_button_index) const;
+		int _get_track_header_column_at_position(int p_track_index, const Vector2 &p_position) const;
+		Rect2 _get_track_header_button_rect(const Rect2 &p_cell_rect, int p_button_draw_index) const;
 		void _get_visible_key_time_range(float p_y_margin, double& r_start, double& r_end) const;
 		double _key_to_y(const TimelineTrackKey* p_key) const;
 		double _key_end_to_y(const TimelineTrackKey* p_key) const;
@@ -339,26 +393,42 @@ namespace godot {
 		float _get_instant_key_size(const TimelineTrackKey* p_key) const;
 		Rect2 _get_instant_key_rect(const CachedTrack& p_track, const TimelineTrackKey* p_key, double p_y) const;
 		Rect2 _get_clip_key_rect(const CachedTrack& p_track, double p_y, double p_y_end) const;
+		void _draw_key_projections(const Rect2& p_cull_rect);
 		Ref<StyleBox> _get_instant_key_normal_style(const TimelineTrackKey *p_key) const;
 		Ref<StyleBox> _get_instant_key_selected_style(const TimelineTrackKey *p_key) const;
 		Ref<StyleBox> _get_clip_key_normal_style(const TimelineTrackKey *p_key) const;
 		Ref<StyleBox> _get_clip_key_selected_style(const TimelineTrackKey *p_key) const;
 		Ref<StyleBox> _get_key_release_preview_style() const;
+		Ref<StyleBox> _get_key_allowed_overlap_preview_style() const;
+			Color _get_background_color() const;
+			Color _get_separator_color() const;
+			float _get_separator_width() const;
+			Color _get_bar_line_color() const;
+			float _get_bar_line_width() const;
+			Color _get_beat_line_color() const;
+			float _get_beat_line_width() const;
+			Ref<StyleBox> _get_selection_rect_style() const;
+		void _load_theme_stylebox_caches() const;
 		String _format_indicator_time(double p_time) const;
 
 		struct StyleCache {
-			Ref<StyleBox> instant_key_normal;
 			Ref<StyleBox> instant_key_normal_fallback;
-			Ref<StyleBox> instant_key_selected;
 			Ref<StyleBox> instant_key_selected_fallback;
-			Ref<StyleBox> clip_key_normal;
 			Ref<StyleBox> clip_key_normal_fallback;
-			Ref<StyleBox> clip_key_selected;
 			Ref<StyleBox> clip_key_selected_fallback;
-			Ref<StyleBox> selection_rect;
 			Ref<StyleBox> selection_rect_fallback;
-			Ref<StyleBox> key_release_preview;
 			Ref<StyleBox> key_release_preview_fallback;
+			Ref<StyleBox> key_allowed_overlap_preview_fallback;
+
+			Ref<StyleBox> instant_key_normal_theme;
+			Ref<StyleBox> instant_key_selected_theme;
+			Ref<StyleBox> clip_key_normal_theme;
+			Ref<StyleBox> clip_key_selected_theme;
+			Ref<StyleBox> key_release_preview_theme;
+			Ref<StyleBox> key_allowed_overlap_preview_theme;
+			Ref<StyleBox> selection_rect_theme;
+			int32_t instant_key_scale_theme = -2;
+			bool theme_caches_valid = false;
 
 			float icon_max_width = 0.0f;
 			float instant_key_scale = 0.4f;
@@ -373,6 +443,7 @@ namespace godot {
 
 		GDVIRTUAL3RC(bool, _should_handle_selection_rect, Rect2, TypedArray<TimelineTrackKey>, int)
 		GDVIRTUAL3(_handle_selection_rect, Rect2, TypedArray<TimelineTrackKey>, int)
+		GDVIRTUAL2RC(bool, _is_key_overlap_allowed, TimelineTrackKey*, TimelineTrackKey*)
 
 	public:
 		TimelinePanelBase();
@@ -382,13 +453,19 @@ namespace godot {
 		virtual void _gui_input(const Ref<InputEvent>& p_gui_input) override;
 		virtual String _get_tooltip(const Vector2& p_at_position) const override;
 
-		TimelineTrackKey *create_key(int p_track_index, double p_time, double p_length = 0.0, bool p_snap = false);
+		TimelineTrackKey* create_key(int p_track_index, double p_time, double p_length = 0.0, bool p_snap = false, const Variant& p_metadata = Variant());
 		void remove_key(int p_track_index, int p_key_index);
+		int remove_keys(const TypedArray<TimelineTrackKey>& p_keys);
 		void clear_track_keys(int p_track_index);
 		void clear_all_keys();
 		TypedArray<TimelineTrackKey> replace_track_keys(int p_track_index, const Array& p_key_data, bool p_snap = false);
 		int get_key_count(int p_track_index) const;
 		TimelineTrackKey* get_key(int p_track_index, int p_key_index) const;
+		int get_key_track_index(const TimelineTrackKey* p_key) const;
+		Rect2 get_key_rect(int p_track_index, const TimelineTrackKey* p_key);
+		TypedArray<TimelineTrackKey> get_keys_in_rect(const Rect2& p_rect) const;
+		void set_key_overlap_preview(const TypedArray<TimelineTrackKey>& p_keys);
+		void set_key_projections(const Array& p_projections);
 		TypedArray<TimelineTrackKey> find_keys(int p_track_index, double p_start_time, double p_end_time) const;
 
 		double get_time_from_position(const double p_position) const;
@@ -401,14 +478,8 @@ namespace godot {
 		HScrollBar* get_h_scroll_bar() const;
 		VScrollBar* get_v_scroll_bar() const;
 
-		void set_background_color(const Color& p_background_color);
-		Color get_background_color() const;
 
-		void set_separator_color(const Color& p_separator_color);
-		Color get_separator_color() const;
 
-		void set_separator_width(const float p_width);
-		float get_separator_width() const;
 
 		void set_header_width(const float p_width);
 		float get_header_width() const;
@@ -446,17 +517,9 @@ namespace godot {
 		void set_beat_per_bar(const int p_beats_per_bar);
 		int get_beat_per_bar() const;
 
-		void set_bar_line_color(const Color& p_color);
-		Color get_bar_line_color() const;
 
-		void set_bar_line_width(const float p_width);
-		float get_bar_line_width() const;
 
-		void set_beat_line_color(const Color& p_color);
-		Color get_beat_line_color() const;
 
-		void set_beat_line_width(const float p_width);
-		float get_beat_line_width() const;
 
 		void set_bar_number_direction(BarNumberDirection p_direction);
 		BarNumberDirection get_bar_number_direction() const;
@@ -472,6 +535,18 @@ namespace godot {
 
 		void set_time_ruler(Ref<TimelineTimeRuler> p_time_ruler);
 		Ref<TimelineTimeRuler> get_time_ruler() const;
+
+		TimelineTrackItem *create_track(int p_index = -1);
+		void remove_track(const Variant &p_track);
+		void clear_tracks();
+		TimelineTrackItem *get_track(int p_index) const;
+		int get_track_count() const;
+		int get_track_index(TimelineTrackItem *p_track) const;
+
+		void set_header_column_count(int p_count);
+		int get_header_column_count() const;
+		void set_header_column_width(int p_column, float p_width);
+		float get_header_column_width(int p_column) const;
 
 		void set_tracks(const TypedArray<TimelineTrack>& p_tracks);
 		TypedArray<TimelineTrack> get_tracks() const;
@@ -506,29 +581,14 @@ namespace godot {
 		void set_minimap_width(int p_width);
 		int get_minimap_width() const;
 
-		void set_icon_max_width(const float p_width);
-		float get_icon_max_width() const;
 
-		void set_instant_key_scale(const float p_scale);
-		float get_instant_key_scale() const;
 
-		void set_instant_key_normal_style(Ref<StyleBox> p_style);
-		Ref<StyleBox> get_instant_key_normal_style() const;
 
-		void set_instant_key_selected_style(Ref<StyleBox> p_style);
-		Ref<StyleBox> get_instant_key_selected_style() const;
 
-		void set_clip_key_normal_style(Ref<StyleBox> p_style);
-		Ref<StyleBox> get_clip_key_normal_style() const;
 
-		void set_clip_key_selected_style(Ref<StyleBox> p_style);
-		Ref<StyleBox> get_clip_key_selected_style() const;
 
-		void set_selection_rect_style(Ref<StyleBox> p_style);
-		Ref<StyleBox> get_selection_rect_style() const;
 
-		void set_key_release_preview_style(Ref<StyleBox> p_style);
-		Ref<StyleBox> get_key_release_preview_style() const;
+
 
 		void set_allow_key_cross_track_move(bool p_enabled);
 		bool get_allow_key_cross_track_move() const;
@@ -554,6 +614,32 @@ namespace godot {
 
 		void set_allow_right_mouse_selection(bool p_enabled);
 		bool get_allow_right_mouse_selection() const;
+
+		bool _is_track_item_valid(const TimelineTrackItem *p_item, uint64_t p_track_id) const;
+		void _track_item_set_height(TimelineTrackItem *p_item, uint64_t p_track_id, float p_height);
+		float _track_item_get_height(const TimelineTrackItem *p_item, uint64_t p_track_id) const;
+		void _track_item_set_background(TimelineTrackItem *p_item, uint64_t p_track_id, const Color &p_background);
+		Color _track_item_get_background(const TimelineTrackItem *p_item, uint64_t p_track_id) const;
+		void _track_item_set_header_background(TimelineTrackItem *p_item, uint64_t p_track_id, const Ref<StyleBox> &p_style);
+		Ref<StyleBox> _track_item_get_header_background(const TimelineTrackItem *p_item, uint64_t p_track_id) const;
+		void _track_item_set_header_background_fill_track(TimelineTrackItem *p_item, uint64_t p_track_id, bool p_enabled);
+		bool _track_item_get_header_background_fill_track(const TimelineTrackItem *p_item, uint64_t p_track_id) const;
+		void _track_item_set_header_indent(TimelineTrackItem *p_item, uint64_t p_track_id, float p_indent);
+		float _track_item_get_header_indent(const TimelineTrackItem *p_item, uint64_t p_track_id) const;
+		void _track_item_set_text(TimelineTrackItem *p_item, uint64_t p_track_id, int p_column, const String &p_text);
+		String _track_item_get_text(const TimelineTrackItem *p_item, uint64_t p_track_id, int p_column) const;
+		void _track_item_set_icon(TimelineTrackItem *p_item, uint64_t p_track_id, int p_column, Ref<Texture2D> p_icon);
+		Ref<Texture2D> _track_item_get_icon(const TimelineTrackItem *p_item, uint64_t p_track_id, int p_column) const;
+		void _track_item_set_tooltip_text(TimelineTrackItem *p_item, uint64_t p_track_id, int p_column, const String &p_text);
+		String _track_item_get_tooltip_text(const TimelineTrackItem *p_item, uint64_t p_track_id, int p_column) const;
+		int _track_item_add_button(TimelineTrackItem *p_item, uint64_t p_track_id, int p_column, Ref<Texture2D> p_icon, int p_id, bool p_disabled, const String &p_tooltip);
+		void _track_item_erase_button(TimelineTrackItem *p_item, uint64_t p_track_id, int p_column, int p_button_index);
+		void _track_item_clear_buttons(TimelineTrackItem *p_item, uint64_t p_track_id, int p_column);
+		void _track_item_set_button_disabled(TimelineTrackItem *p_item, uint64_t p_track_id, int p_column, int p_button_index, bool p_disabled);
+		bool _track_item_is_button_disabled(const TimelineTrackItem *p_item, uint64_t p_track_id, int p_column, int p_button_index) const;
+		int _track_item_get_button_count(const TimelineTrackItem *p_item, uint64_t p_track_id, int p_column) const;
+		int _track_item_get_button_id(const TimelineTrackItem *p_item, uint64_t p_track_id, int p_column, int p_button_index) const;
+		String _track_item_get_button_tooltip_text(const TimelineTrackItem *p_item, uint64_t p_track_id, int p_column, int p_button_index) const;
 	};
 }
 
@@ -564,4 +650,3 @@ VARIANT_ENUM_CAST(TimelinePanelBase::BarNumberDirection);
 VARIANT_ENUM_CAST(TimelinePanelBase::ScrollMode);
 
 #endif // !TIMELINE_PANEL_BASE_H
-

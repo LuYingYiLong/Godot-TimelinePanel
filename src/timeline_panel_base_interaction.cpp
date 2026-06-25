@@ -414,7 +414,7 @@ namespace godot {
 			test_edge(-hscroll_value + time_ruler->get_width(), HEADER_RESIZE_TARGET_TIME_RULER, -1);
 		}
 
-		for (int i = 0; i < static_cast<int>(_track_cache.size()) && i < tracks.size(); i++) {
+		for (int i = 0; i < static_cast<int>(_track_cache.size()) && i < static_cast<int>(tracks.size()); i++) {
 			const CachedTrack &ct = _track_cache[i];
 			if (ct.width <= 0.0f) continue;
 
@@ -456,12 +456,10 @@ namespace godot {
 			target_width = time_ruler->get_width();
 		} break;
 		case HEADER_RESIZE_TARGET_TRACK: {
-			ERR_FAIL_INDEX(p_track_index, tracks.size());
-			Ref<TimelineTrack> track = tracks[p_track_index];
-			if (track.is_null()) {
+			if (p_track_index < 0 || p_track_index >= static_cast<int>(tracks.size())) {
 				return;
 			}
-			target_width = track->get_width();
+			target_width = tracks[p_track_index].height;
 		} break;
 		case HEADER_RESIZE_TARGET_HEADER_WIDTH: {
 			target_width = _get_horizontal_track_header_width();
@@ -501,10 +499,9 @@ namespace godot {
 			}
 		} break;
 		case HEADER_RESIZE_TARGET_TRACK: {
-			if (header_resize_track_index >= 0 && header_resize_track_index < tracks.size()) {
-				Ref<TimelineTrack> track = tracks[header_resize_track_index];
-				if (track.is_valid() && !Math::is_equal_approx(track->get_width(), width)) {
-					track->set_width(width);
+			if (header_resize_track_index >= 0 && header_resize_track_index < static_cast<int>(tracks.size())) {
+				if (!Math::is_equal_approx(tracks[header_resize_track_index].height, width)) {
+					tracks[header_resize_track_index].height = width;
 					changed = true;
 				}
 			}
@@ -1176,6 +1173,28 @@ namespace godot {
 					return;
 				}
 
+				if (mb->is_pressed() && is_track_header_position_at(mouse_position)) {
+					int track_index = -1;
+					int column = -1;
+					int button_index = -1;
+					if (_find_track_header_button_at_position(mouse_position, track_index, column, button_index)) {
+						const TrackHeaderColumn *header_column = track_index >= 0 && track_index < static_cast<int>(tracks.size()) ? _get_track_column(tracks[track_index], column) : nullptr;
+						if (header_column != nullptr && button_index >= 0 && button_index < static_cast<int>(header_column->buttons.size()) && !header_column->buttons[button_index].disabled) {
+							emit_signal("track_header_button_clicked", track_index, column, header_column->buttons[button_index].id, button_index, static_cast<int>(MouseButton::MOUSE_BUTTON_RIGHT), mouse_position);
+							accept_event();
+							return;
+						}
+					}
+
+					track_index = _get_track_header_index_at_x(panel_orientation == PANEL_ORIENTATION_HORIZONTAL ? mouse_position.y : mouse_position.x);
+					if (track_index >= 0) {
+						column = _get_track_header_column_at_position(track_index, mouse_position);
+						emit_signal("track_header_right_clicked", track_index, column, mouse_position);
+						accept_event();
+						return;
+					}
+				}
+
 				if (mb->is_pressed() && allow_right_mouse_selection &&
 					is_content_position_at(mouse_position) && !_get_minimap_rect().has_point(mouse_position)) {
 					right_selecting = true;
@@ -1238,8 +1257,22 @@ namespace godot {
 				}
 
 				if (mb->is_pressed() && is_track_header_position_at(mouse_position)) {
-					const int track_index = _get_track_header_index_at_x(panel_orientation == PANEL_ORIENTATION_HORIZONTAL ? mouse_position.y : mouse_position.x);
+					int track_index = -1;
+					int column = -1;
+					int button_index = -1;
+					if (_find_track_header_button_at_position(mouse_position, track_index, column, button_index)) {
+						const TrackHeaderColumn *header_column = track_index >= 0 && track_index < static_cast<int>(tracks.size()) ? _get_track_column(tracks[track_index], column) : nullptr;
+						if (header_column != nullptr && button_index >= 0 && button_index < static_cast<int>(header_column->buttons.size()) && !header_column->buttons[button_index].disabled) {
+							emit_signal("track_header_button_clicked", track_index, column, header_column->buttons[button_index].id, button_index, static_cast<int>(MouseButton::MOUSE_BUTTON_LEFT), mouse_position);
+							accept_event();
+							return;
+						}
+					}
+
+					track_index = _get_track_header_index_at_x(panel_orientation == PANEL_ORIENTATION_HORIZONTAL ? mouse_position.y : mouse_position.x);
 					if (track_index >= 0) {
+						column = _get_track_header_column_at_position(track_index, mouse_position);
+						emit_signal("track_header_clicked", track_index, column, mouse_position);
 						_select_track_keys(track_index);
 						accept_event();
 						return;
@@ -1585,17 +1618,28 @@ namespace godot {
 			}
 		}
 
-		for (int i = 0; i < tracks.size() && i < static_cast<int>(_track_cache.size()); i++) {
-			Ref<TimelineTrack> track = tracks[i];
-			if (track.is_null()) continue;
+		int button_track_index = -1;
+		int button_column = -1;
+		int button_index = -1;
+		if (_find_track_header_button_at_position(p_at_position, button_track_index, button_column, button_index)) {
+			const TrackHeaderColumn *column = button_track_index >= 0 && button_track_index < static_cast<int>(tracks.size()) ? _get_track_column(tracks[button_track_index], button_column) : nullptr;
+			if (column != nullptr && button_index >= 0 && button_index < static_cast<int>(column->buttons.size())) {
+				return column->buttons[button_index].tooltip_text;
+			}
+		}
 
+		for (int i = 0; i < static_cast<int>(tracks.size()) && i < static_cast<int>(_track_cache.size()); i++) {
 			const CachedTrack &ct = _track_cache[i];
 			if (ct.width <= 0.0f) continue;
 
 			Rect2 area = panel_orientation == PANEL_ORIENTATION_HORIZONTAL ?
-				Rect2(Vector2(0.0f, horizontal_ruler_height + ct.x_offset - vscroll_value), Vector2(track->get_width(), ct.width)) :
+				Rect2(Vector2(0.0f, horizontal_ruler_height + ct.x_offset - vscroll_value), Vector2(_get_horizontal_track_header_width(), ct.width)) :
 				Rect2(Vector2(ct.x_offset - hscroll_value, 0.0f), Vector2(ct.width, header_height));
-			if (area.has_point(p_at_position)) return track->get_tooltip_text();
+			if (area.has_point(p_at_position)) {
+				const int column_index = _get_track_header_column_at_position(i, p_at_position);
+				const TrackHeaderColumn *column = _get_track_column(tracks[i], column_index >= 0 ? column_index : 0);
+				return column != nullptr ? column->tooltip_text : String();
+			}
 		}
 
 		return String();

@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "cd D:\\GodotProjects\\Godot-TimelinePanel && scons*",
+      "D:\\Godot_v4.7-stable_win64.exe\\Godot_v4.7-stable_win64_console.exe*",
+      "Get-Process -Name *Godot*",
+      "Stop-Process -Name *Godot* -Force",
+      "Select-String*"
+    ]
+  }
+}

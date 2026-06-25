@@ -15,13 +15,31 @@
 #include <godot_cpp/classes/style_box_flat.hpp>
 #include <godot_cpp/classes/theme_db.hpp>
 
+#include "theme_helpers.h"
+
 namespace godot {
+	void TimelinePanelBase::_load_theme_stylebox_caches() const {
+		TimelinePanelBase* self = const_cast<TimelinePanelBase*>(this);
+		self->style_cache.instant_key_normal_theme = get_theme_stylebox_or(self, "TimelinePanel", "instant_key_normal");
+		self->style_cache.instant_key_selected_theme = get_theme_stylebox_or(self, "TimelinePanel", "instant_key_selected");
+		self->style_cache.clip_key_normal_theme = get_theme_stylebox_or(self, "TimelinePanel", "clip_key_normal");
+		self->style_cache.clip_key_selected_theme = get_theme_stylebox_or(self, "TimelinePanel", "clip_key_selected");
+		self->style_cache.key_release_preview_theme = get_theme_stylebox_or(self, "TimelinePanel", "key_release_preview");
+		self->style_cache.key_allowed_overlap_preview_theme = get_theme_stylebox_or(self, "TimelinePanel", "key_allowed_overlap_preview");
+		self->style_cache.selection_rect_theme = get_theme_stylebox_or(self, "TimelinePanel", "selection_rect");
+		self->style_cache.instant_key_scale_theme = get_theme_constant_or(self, "TimelinePanel", "instant_key_scale", -1);
+		self->style_cache.theme_caches_valid = true;
+	}
+
 	Ref<StyleBox> TimelinePanelBase::_get_instant_key_normal_style(const TimelineTrackKey *p_key) const {
 		if (p_key && p_key->get_instant_key_normal_style().is_valid()) {
 			return p_key->get_instant_key_normal_style();
 		}
-		if (style_cache.instant_key_normal.is_valid()) {
-			return style_cache.instant_key_normal;
+		if (!style_cache.theme_caches_valid) {
+			_load_theme_stylebox_caches();
+		}
+		if (style_cache.instant_key_normal_theme.is_valid()) {
+			return style_cache.instant_key_normal_theme;
 		}
 		return style_cache.instant_key_normal_fallback;
 	}
@@ -31,8 +49,11 @@ namespace godot {
 		if (p_key && p_key->get_instant_key_selected_style().is_valid()) {
 			return p_key->get_instant_key_selected_style();
 		}
-		if (style_cache.instant_key_selected.is_valid()) {
-			return style_cache.instant_key_selected;
+		if (!style_cache.theme_caches_valid) {
+			_load_theme_stylebox_caches();
+		}
+		if (style_cache.instant_key_selected_theme.is_valid()) {
+			return style_cache.instant_key_selected_theme;
 		}
 		return style_cache.instant_key_selected_fallback;
 	}
@@ -42,8 +63,11 @@ namespace godot {
 		if (p_key && p_key->get_clip_key_normal_style().is_valid()) {
 			return p_key->get_clip_key_normal_style();
 		}
-		if (style_cache.clip_key_normal.is_valid()) {
-			return style_cache.clip_key_normal;
+		if (!style_cache.theme_caches_valid) {
+			_load_theme_stylebox_caches();
+		}
+		if (style_cache.clip_key_normal_theme.is_valid()) {
+			return style_cache.clip_key_normal_theme;
 		}
 		return style_cache.clip_key_normal_fallback;
 	}
@@ -53,97 +77,78 @@ namespace godot {
 		if (p_key && p_key->get_clip_key_selected_style().is_valid()) {
 			return p_key->get_clip_key_selected_style();
 		}
-		if (style_cache.clip_key_selected.is_valid()) {
-			return style_cache.clip_key_selected;
+		if (!style_cache.theme_caches_valid) {
+			_load_theme_stylebox_caches();
+		}
+		if (style_cache.clip_key_selected_theme.is_valid()) {
+			return style_cache.clip_key_selected_theme;
 		}
 		return style_cache.clip_key_selected_fallback;
 	}
 
 
 	Ref<StyleBox> TimelinePanelBase::_get_key_release_preview_style() const {
-		if (style_cache.key_release_preview.is_valid()) {
-			return style_cache.key_release_preview;
+		if (!style_cache.theme_caches_valid) {
+			_load_theme_stylebox_caches();
+		}
+		if (style_cache.key_release_preview_theme.is_valid()) {
+			return style_cache.key_release_preview_theme;
 		}
 		return style_cache.key_release_preview_fallback;
 	}
 
 
-	void TimelinePanelBase::set_instant_key_scale(const float p_scale) {
-		style_cache.instant_key_scale = p_scale;
-		_refresh_track_key_metrics();
-		queue_redraw();
+	Ref<StyleBox> TimelinePanelBase::_get_key_allowed_overlap_preview_style() const {
+		if (!style_cache.theme_caches_valid) {
+			_load_theme_stylebox_caches();
+		}
+		if (style_cache.key_allowed_overlap_preview_theme.is_valid()) {
+			return style_cache.key_allowed_overlap_preview_theme;
+		}
+		return style_cache.key_allowed_overlap_preview_fallback;
 	}
 
 
-	float TimelinePanelBase::get_instant_key_scale() const {
-		return style_cache.instant_key_scale;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	Ref<StyleBox> TimelinePanelBase::_get_selection_rect_style() const {
+		if (!style_cache.theme_caches_valid) {
+			_load_theme_stylebox_caches();
+		}
+		if (style_cache.selection_rect_theme.is_valid()) {
+			return style_cache.selection_rect_theme;
+		}
+		return Ref<StyleBox>();
 	}
-
-
-	void TimelinePanelBase::set_instant_key_normal_style(Ref<StyleBox> p_style) {
-		style_cache.instant_key_normal = p_style;
-		queue_redraw();
-	}
-
-
-	Ref<StyleBox> TimelinePanelBase::get_instant_key_normal_style() const {
-		return style_cache.instant_key_normal;
-	}
-
-
-	void TimelinePanelBase::set_instant_key_selected_style(Ref<StyleBox> p_style) {
-		style_cache.instant_key_selected = p_style;
-		queue_redraw();
-	}
-
-
-	Ref<StyleBox> TimelinePanelBase::get_instant_key_selected_style() const {
-		return style_cache.instant_key_selected;
-	}
-
-
-	void TimelinePanelBase::set_clip_key_normal_style(Ref<StyleBox> p_style) {
-		style_cache.clip_key_normal = p_style;
-		queue_redraw();
-	}
-
-
-	Ref<StyleBox> TimelinePanelBase::get_clip_key_normal_style() const {
-		return style_cache.clip_key_normal;
-	}
-
-
-	void TimelinePanelBase::set_clip_key_selected_style(Ref<StyleBox> p_style) {
-		style_cache.clip_key_selected = p_style;
-		queue_redraw();
-	}
-
-
-	Ref<StyleBox> TimelinePanelBase::get_clip_key_selected_style() const {
-		return style_cache.clip_key_selected;
-	}
-
-
-	void TimelinePanelBase::set_selection_rect_style(Ref<StyleBox> p_style) {
-		style_cache.selection_rect = p_style;
-		queue_redraw();
-	}
-
-
-	Ref<StyleBox> TimelinePanelBase::get_selection_rect_style() const {
-		return style_cache.selection_rect;
-	}
-
-
-	void TimelinePanelBase::set_key_release_preview_style(Ref<StyleBox> p_style) {
-		style_cache.key_release_preview = p_style;
-		queue_redraw();
-	}
-
-
-	Ref<StyleBox> TimelinePanelBase::get_key_release_preview_style() const {
-		return style_cache.key_release_preview;
-	}
-
-
 }

@@ -16,6 +16,7 @@
 #include <godot_cpp/classes/input_event_pan_gesture.hpp>
 #include <godot_cpp/classes/style_box_flat.hpp>
 #include <godot_cpp/classes/theme_db.hpp>
+#include <godot_cpp/core/object.hpp>
 #include <godot_cpp/variant/dictionary.hpp>
 
 namespace godot {
@@ -181,7 +182,13 @@ namespace godot {
 	}
 
 
-	bool TimelinePanelBase::_keys_overlap(const TimelineTrackKey* p_a, const TimelineTrackKey* p_b) const {
+	bool TimelinePanelBase::_is_key_overlap_permitted(const TimelineTrackKey* p_a, const TimelineTrackKey* p_b) const {
+		bool allowed = false;
+		return GDVIRTUAL_CALL(_is_key_overlap_allowed, const_cast<TimelineTrackKey *>(p_a), const_cast<TimelineTrackKey *>(p_b), allowed) && allowed;
+	}
+
+
+	bool TimelinePanelBase::_keys_intersect(const TimelineTrackKey* p_a, const TimelineTrackKey* p_b) const {
 		if (!p_a || !p_b || p_a == p_b) {
 			return false;
 		}
@@ -208,6 +215,25 @@ namespace godot {
 		}
 
 		return a_start < b_end - epsilon && b_start < a_end - epsilon;
+	}
+
+
+	bool TimelinePanelBase::_keys_overlap(const TimelineTrackKey* p_a, const TimelineTrackKey* p_b) const {
+		return _keys_intersect(p_a, p_b) && !_is_key_overlap_permitted(p_a, p_b);
+	}
+
+
+	bool TimelinePanelBase::_keys_intersect_inclusive(const TimelineTrackKey* p_a, const TimelineTrackKey* p_b) const {
+		if (!p_a || !p_b || p_a == p_b) {
+			return false;
+		}
+
+		const double epsilon = 0.000001;
+		const double a_start = p_a->get_time();
+		const double b_start = p_b->get_time();
+		const double a_end = a_start + MAX(p_a->get_length(), 0.0);
+		const double b_end = b_start + MAX(p_b->get_length(), 0.0);
+		return a_start <= b_end + epsilon && b_start <= a_end + epsilon;
 	}
 
 
@@ -319,19 +345,74 @@ namespace godot {
 
 	void TimelinePanelBase::_update_key_release_preview(const std::vector<TimelineTrackKey *> &p_moved_keys) {
 		key_release_preview_keys.clear();
+		key_allowed_overlap_preview_keys.clear();
 		for (TimelineTrackKey *destroy_key : _get_moved_key_overlaps(p_moved_keys)) {
 			key_release_preview_keys.insert(destroy_key);
+		}
+
+		std::unordered_set<TimelineTrackKey *> moved_key_set;
+		moved_key_set.reserve(p_moved_keys.size());
+		for (TimelineTrackKey* moved_key : p_moved_keys) {
+			if (moved_key) {
+				moved_key_set.insert(moved_key);
+			}
+		}
+
+		for (TimelineTrackKey* moved_key : p_moved_keys) {
+			if (!moved_key || key_release_preview_keys.find(moved_key) != key_release_preview_keys.end()) {
+				continue;
+			}
+			bool has_allowed_overlap = false;
+			const double epsilon = 0.000001;
+			const double moved_start = moved_key->get_time();
+			const double moved_end = moved_start + MAX(moved_key->get_length(), 0.0);
+			for (const CachedTrack& track : _track_cache) {
+				const double search_start = moved_start - MAX(track.max_key_length, 0.0) - epsilon;
+				const double search_end = moved_end + epsilon;
+				auto other_it = std::lower_bound(track.keys.begin(), track.keys.end(), search_start,
+					[](TimelineTrackKey* p_other_key, double p_time) {
+						return p_other_key && p_other_key->get_time() < p_time;
+					});
+				for (; other_it != track.keys.end(); ++other_it) {
+					TimelineTrackKey* other_key = *other_it;
+					if (!other_key || other_key->is_disabled() || other_key == moved_key) {
+						continue;
+					}
+					if (other_key->get_time() > search_end) {
+						break;
+					}
+					if (moved_key_set.find(other_key) != moved_key_set.end()) {
+						continue;
+					}
+					if (_keys_intersect_inclusive(moved_key, other_key) && _is_key_overlap_permitted(moved_key, other_key)) {
+						has_allowed_overlap = true;
+						break;
+					}
+				}
+				if (has_allowed_overlap) {
+					break;
+				}
+			}
+			if (has_allowed_overlap) {
+				key_allowed_overlap_preview_keys.insert(moved_key);
+			}
 		}
 	}
 
 
 	void TimelinePanelBase::_clear_key_release_preview() {
 		key_release_preview_keys.clear();
+		key_allowed_overlap_preview_keys.clear();
 	}
 
 
 	bool TimelinePanelBase::_is_key_release_previewed(const TimelineTrackKey *p_key) const {
 		return p_key && key_release_preview_keys.find(p_key) != key_release_preview_keys.end();
+	}
+
+
+	bool TimelinePanelBase::_is_key_allowed_overlap_previewed(const TimelineTrackKey* p_key) const {
+		return p_key && key_allowed_overlap_preview_keys.find(p_key) != key_allowed_overlap_preview_keys.end();
 	}
 
 
@@ -351,7 +432,7 @@ namespace godot {
 	}
 
 
-	TimelineTrackKey *TimelinePanelBase::create_key(int p_track_index, double p_time, double p_length, bool p_snap) {
+	TimelineTrackKey* TimelinePanelBase::create_key(int p_track_index, double p_time, double p_length, bool p_snap, const Variant& p_metadata) {
 		ERR_FAIL_INDEX_V(p_track_index, static_cast<int>(_track_cache.size()), nullptr);
 
 		auto &ct = _track_cache[p_track_index];
@@ -360,6 +441,7 @@ namespace godot {
 		TimelineTrackKey *key = memnew(TimelineTrackKey);
 		key->set_time(target_time);
 		key->set_length(p_length);
+		key->set_metadata(p_metadata);
 
 		if (_has_key_overlap_in_track(ct, key)) {
 			memdelete(key);
@@ -410,6 +492,48 @@ namespace godot {
 		}
 		_refresh_track_key_metrics();
 		queue_redraw();
+	}
+
+
+	int TimelinePanelBase::remove_keys(const TypedArray<TimelineTrackKey>& p_keys) {
+		if (p_keys.is_empty()) {
+			return 0;
+		}
+
+		std::unordered_set<TimelineTrackKey*> keys_to_remove;
+		keys_to_remove.reserve(p_keys.size());
+		for (int i = 0; i < p_keys.size(); i++) {
+			TimelineTrackKey* key = VariantCaster<TimelineTrackKey*>::cast(p_keys[i]);
+			if (key) {
+				keys_to_remove.insert(key);
+			}
+		}
+		if (keys_to_remove.empty()) {
+			return 0;
+		}
+
+		_clear_key_release_preview();
+		int removed_count = 0;
+		for (CachedTrack& ct : _track_cache) {
+			auto write_it = ct.keys.begin();
+			for (auto read_it = ct.keys.begin(); read_it != ct.keys.end(); ++read_it) {
+				TimelineTrackKey* key = *read_it;
+				if (key && keys_to_remove.find(key) != keys_to_remove.end()) {
+					memdelete(key);
+					removed_count++;
+					continue;
+				}
+				*write_it = key;
+				++write_it;
+			}
+			ct.keys.erase(write_it, ct.keys.end());
+		}
+
+		if (removed_count > 0) {
+			_refresh_track_key_metrics();
+			queue_redraw();
+		}
+		return removed_count;
 	}
 
 
@@ -542,6 +666,104 @@ namespace godot {
 		const auto& keys = _track_cache[p_track_index].keys;
 		ERR_FAIL_INDEX_V(p_key_index, static_cast<int>(keys.size()), nullptr);
 		return keys[p_key_index];
+	}
+
+
+	TypedArray<TimelineTrackKey> TimelinePanelBase::get_keys_in_rect(const Rect2& p_rect) const {
+		return _get_keys_in_rect(p_rect);
+	}
+
+
+	int TimelinePanelBase::get_key_track_index(const TimelineTrackKey* p_key) const {
+		if (!p_key) {
+			return -1;
+		}
+		for (int track_index = 0; track_index < static_cast<int>(_track_cache.size()); ++track_index) {
+			const auto& keys = _track_cache[track_index].keys;
+			if (std::find(keys.begin(), keys.end(), p_key) != keys.end()) {
+				return track_index;
+			}
+		}
+		return -1;
+	}
+
+
+	Rect2 TimelinePanelBase::get_key_rect(int p_track_index, const TimelineTrackKey* p_key) {
+		ERR_FAIL_INDEX_V(p_track_index, static_cast<int>(_track_cache.size()), Rect2());
+		ERR_FAIL_NULL_V(p_key, Rect2());
+		_sync_track_cache_geometry();
+		const CachedTrack& track = _track_cache[p_track_index];
+		if (track.width <= 0.0f) {
+			return Rect2();
+		}
+		if (p_key->is_instant()) {
+			return _get_instant_key_rect(track, p_key, _key_to_y(p_key));
+		}
+		return _get_clip_key_rect(track, _key_to_y(p_key), _key_end_to_y(p_key));
+	}
+
+
+	void TimelinePanelBase::_draw_key_projections(const Rect2& p_cull_rect) {
+		for (const KeyProjection& projection : key_projections) {
+			if (projection.track_index < 0 || projection.track_index >= static_cast<int>(_track_cache.size()) || projection.style.is_null()) {
+				continue;
+			}
+			Object* object = ObjectDB::get_instance(projection.key_id);
+			TimelineTrackKey* key = Object::cast_to<TimelineTrackKey>(object);
+			if (!key || key->is_disabled()) {
+				continue;
+			}
+			const CachedTrack& track = _track_cache[projection.track_index];
+			if (track.width <= 0.0f) {
+				continue;
+			}
+			const Rect2 key_rect = key->is_instant() ?
+					_get_instant_key_rect(track, key, _key_to_y(key)) :
+					_get_clip_key_rect(track, _key_to_y(key), _key_end_to_y(key));
+			if (p_cull_rect.intersects(key_rect)) {
+				draw_style_box(projection.style, key_rect);
+			}
+		}
+	}
+
+
+	void TimelinePanelBase::set_key_projections(const Array& p_projections) {
+		key_projections.clear();
+		key_projections.reserve(p_projections.size());
+		for (int projection_index = 0; projection_index < p_projections.size(); projection_index++) {
+			Variant projection_value = p_projections[projection_index];
+			if (projection_value.get_type() != Variant::DICTIONARY) {
+				continue;
+			}
+			Dictionary projection_data = projection_value;
+			Object* key_object = projection_data.get("key", Variant());
+			TimelineTrackKey* key = Object::cast_to<TimelineTrackKey>(key_object);
+			Ref<StyleBox> style = get_style_box_from_variant(projection_data.get("style", Variant()));
+			const int track_index = int(projection_data.get("track_index", -1));
+			if (!key || style.is_null() || track_index < 0 || track_index >= static_cast<int>(_track_cache.size())) {
+				continue;
+			}
+			KeyProjection projection;
+			projection.key_id = key->get_instance_id();
+			projection.track_index = track_index;
+			projection.style = style;
+			key_projections.push_back(projection);
+		}
+		queue_redraw();
+	}
+
+
+	void TimelinePanelBase::set_key_overlap_preview(const TypedArray<TimelineTrackKey>& p_keys) {
+		std::vector<TimelineTrackKey*> keys;
+		keys.reserve(p_keys.size());
+		for (int key_index = 0; key_index < p_keys.size(); ++key_index) {
+			TimelineTrackKey* key = Object::cast_to<TimelineTrackKey>(p_keys[key_index]);
+			if (key) {
+				keys.push_back(key);
+			}
+		}
+		_update_key_release_preview(keys);
+		queue_redraw();
 	}
 
 

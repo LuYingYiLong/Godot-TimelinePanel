@@ -1,0 +1,2 @@
+- [工具链环境](toolchain-environment.md) — Godot 4.7, MSVC 14.44, dumpbin, 无 cdb.exe
+- [构建参数](build-parameters.md) — SCons target=template_debug -j8, 输出 DLL, 冒烟验证

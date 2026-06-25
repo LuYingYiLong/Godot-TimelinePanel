@@ -15,6 +15,8 @@
 #include <godot_cpp/classes/style_box_flat.hpp>
 #include <godot_cpp/classes/theme_db.hpp>
 
+#include "theme_helpers.h"
+
 namespace {
 	constexpr float INSTANT_KEY_BASE_SIZE = 32.0f;
 }
@@ -417,10 +419,22 @@ namespace godot {
 
 
 	float TimelinePanelBase::_get_instant_key_scale(const TimelineTrackKey* p_key) const {
+		if (p_key) {
+			const float key_scale = p_key->get_instant_key_scale();
+			if (key_scale != 0.4f) {
+				return key_scale;
+			}
+		}
+		if (!style_cache.theme_caches_valid) {
+			_load_theme_stylebox_caches();
+		}
+		if (style_cache.instant_key_scale_theme >= 0) {
+			return static_cast<float>(style_cache.instant_key_scale_theme) / 100.0f;
+		}
 		if (style_cache.instant_key_scale != 0.4f) {
 			return style_cache.instant_key_scale;
 		}
-		return p_key ? p_key->get_instant_key_scale() : 0.4f;
+		return 0.4f;
 	}
 
 
@@ -536,24 +550,11 @@ namespace godot {
 
 
 	float TimelinePanelBase::_calculate_track_span() const {
-		if (panel_orientation == PANEL_ORIENTATION_HORIZONTAL) {
-			float height = 0.0f;
-			for (int64_t i = 0; i < tracks.size(); i++) {
-				Ref<TimelineTrack> track = tracks[i];
-				height += track.is_valid() ? track->get_width() : _get_horizontal_track_height();
-			}
-			return height;
+		float span = 0.0f;
+		for (const TrackData &track : tracks) {
+			span += track.height;
 		}
-
-		float width = 0.0f;
-
-		for (int64_t i = 0; i < tracks.size(); i++) {
-			Ref<TimelineTrack> track = tracks[i];
-			if (track.is_null()) continue;
-			width += track->get_width();
-		}
-
-		return width;
+		return span;
 	}
 
 

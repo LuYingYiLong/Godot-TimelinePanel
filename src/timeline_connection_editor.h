@@ -45,6 +45,8 @@ namespace godot {
 		CountingUnit counting_unit = TIME;
 		int fps = 24;
 		bool key_snap_enabled = false;
+		bool point_snap_enabled = false;
+		Vector2 point_snap_step = Vector2(1.0f, 1.0f);
 		bool center_short_vertical_range = false;
 		int beat_per_bar = 4;
 		struct BPM {
@@ -88,15 +90,10 @@ namespace godot {
 		Vector2 range_max = Vector2(1024.0f, 1024.0f);
 
 		struct StyleCache {
-			Ref<StyleBox> key_normal;
 			Ref<StyleBox> key_normal_fallback;
-			Ref<StyleBox> key_selected;
 			Ref<StyleBox> key_selected_fallback;
-			Ref<StyleBox> handle_normal;
 			Ref<StyleBox> handle_normal_fallback;
-			Ref<StyleBox> handle_selected;
 			Ref<StyleBox> handle_selected_fallback;
-			Ref<StyleBox> selection_rect;
 			Ref<StyleBox> selection_rect_fallback;
 			float key_scale = 1.0f;
 			float handle_scale = 1.0f;
@@ -113,6 +110,13 @@ namespace godot {
 		DragTarget drag_target = DRAG_TARGET_NONE;
 		int drag_point_index = -1;
 		Vector2 drag_content_offset;
+		Vector2 drag_anchor_start_position;
+		struct DragPointState {
+			Ref<TimelineConnection> connection;
+			int point_index = -1;
+			Vector2 start_position;
+		};
+		std::vector<DragPointState> drag_point_states;
 
 		Vector2 _get_content_origin() const;
 		float _get_vertical_range_center_offset(const Vector2 &p_base_origin) const;
@@ -142,6 +146,20 @@ namespace godot {
 		Ref<StyleBox> _get_handle_normal_style() const;
 		Ref<StyleBox> _get_handle_selected_style() const;
 		Ref<StyleBox> _get_selection_rect_style() const;
+		Color _get_ruler_background_color() const;
+		Color _get_ruler_tick_color() const;
+		Color _get_ruler_text_color() const;
+		Color _get_ruler_major_grid_color() const;
+		Color _get_ruler_minor_grid_color() const;
+		Color _get_handle_line_color() const;
+		Color _get_handle_line_selected_color() const;
+		Color _get_zero_tick_color() const;
+		float _get_key_scale() const;
+		float _get_handle_scale() const;
+		float _get_handle_line_width() const;
+		float _get_bezier_line_width() const;
+		int32_t _get_ruler_font_size() const;
+		float _get_ruler_min_tick_spacing() const;
 		float _get_smart_scroll_step(bool p_horizontal) const;
 		void _scroll(const Vector2 &p_delta);
 		void _zoom_at_position(const Vector2 &p_position, float p_factor);
@@ -235,6 +253,12 @@ namespace godot {
 		void set_key_snap_enabled(bool p_enabled);
 		bool is_key_snap_enabled() const;
 
+		void set_point_snap_enabled(bool p_enabled);
+		bool is_point_snap_enabled() const;
+
+		void set_point_snap_step(const Vector2 &p_step);
+		Vector2 get_point_snap_step() const;
+
 		void set_center_short_vertical_range(bool p_enabled);
 		bool is_short_vertical_range_centered() const;
 
@@ -246,6 +270,9 @@ namespace godot {
 		double get_position_from_time(double p_time) const;
 		double get_position_from_frame(int64_t p_frame) const;
 		double get_position_from_beat(double p_beat) const;
+		Vector2 content_to_screen(const Vector2 &p_position) const;
+		Vector2 screen_to_content(const Vector2 &p_position) const;
+		void fit_connections(float p_margin = 32.0f);
 
 		void set_scroll_offset(const Vector2 &p_offset);
 		Vector2 get_scroll_offset() const;
@@ -268,29 +295,15 @@ namespace godot {
 		void set_ruler_size(const Vector2 &p_size);
 		Vector2 get_ruler_size() const;
 
-		void set_ruler_min_tick_spacing(float p_spacing);
-		float get_ruler_min_tick_spacing() const;
 
-		void set_ruler_font_size(int p_size);
-		int get_ruler_font_size() const;
 
 		void set_highlight_zero_tick(bool p_enabled);
 		bool is_highlighting_zero_tick() const;
 
-		void set_ruler_background_color(const Color &p_color);
-		Color get_ruler_background_color() const;
 
-		void set_ruler_tick_color(const Color &p_color);
-		Color get_ruler_tick_color() const;
 
-		void set_ruler_text_color(const Color &p_color);
-		Color get_ruler_text_color() const;
 
-		void set_ruler_major_grid_color(const Color &p_color);
-		Color get_ruler_major_grid_color() const;
 
-		void set_ruler_minor_grid_color(const Color &p_color);
-		Color get_ruler_minor_grid_color() const;
 
 		void set_range_limited(bool p_limited);
 		bool is_range_limited() const;
@@ -313,44 +326,18 @@ namespace godot {
 		void set_range_max_y(float p_y);
 		float get_range_max_y() const;
 
-		void set_key_scale(float p_scale);
-		float get_key_scale() const;
 
-		void set_key_normal_style(Ref<StyleBox> p_style);
-		Ref<StyleBox> get_key_normal_style() const;
 
-		void set_key_selected_style(Ref<StyleBox> p_style);
-		Ref<StyleBox> get_key_selected_style() const;
 
-		void set_handle_scale(float p_scale);
-		float get_handle_scale() const;
 
-		void set_handle_normal_style(Ref<StyleBox> p_style);
-		Ref<StyleBox> get_handle_normal_style() const;
 
-		void set_handle_selected_style(Ref<StyleBox> p_style);
-		Ref<StyleBox> get_handle_selected_style() const;
 
-		void set_selection_rect_style(Ref<StyleBox> p_style);
-		Ref<StyleBox> get_selection_rect_style() const;
 
-		void set_handle_style(Ref<StyleBox> p_style);
-		Ref<StyleBox> get_handle_style() const;
 
-		void set_handle_line_width(float p_width);
-		float get_handle_line_width() const;
 
-		void set_handle_line_color(const Color &p_color);
-		Color get_handle_line_color() const;
 
-		void set_handle_line_selected_color(const Color &p_color);
-		Color get_handle_line_selected_color() const;
 
-		void set_zero_tick_color(const Color &p_color);
-		Color get_zero_tick_color() const;
 
-		void set_bezier_line_width(float p_width);
-		float get_bezier_line_width() const;
 	};
 }
 
